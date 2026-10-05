@@ -3,6 +3,7 @@
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlparse
@@ -18,6 +19,7 @@ from . import review
 from .firefly import Account, FireflyClient, FireflyError
 from .models import Statement
 from .parsers import parse
+from .rates import DailyRates, RatesError, fetch_rates
 from .store import Store, counterparty_key
 
 HERE = Path(__file__).parent
@@ -32,6 +34,7 @@ def money(amount: Decimal) -> str:
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["money"] = money
 templates.env.filters["merchant_key"] = counterparty_key
+templates.env.filters["rate"] = lambda rate: f"{rate:.6g}"  # 0.9424, 0.00258891
 
 
 class PageError(Exception):
@@ -67,30 +70,25 @@ def connection_of(firefly: FireflyClient) -> Connection:
     return Connection(firefly.url, user=firefly.user_email(), version=firefly.version())
 
 
-def problem_with(statement: Statement, account: Account | None) -> str:
-    """Why this statement can't be sent to this account yet, if it can't."""
-    if account is None:
-        return "Choose the Firefly account this statement belongs to."
-    if account.currency != statement.currency:
-        return (
-            f"This statement is in {statement.currency} but {account.name} is in {account.currency}. "
-            "Converting currencies isn't built yet."
-        )
-    return ""
+CHOOSE_ACCOUNT = "Choose the Firefly account this statement belongs to."
 
 
-def apply_choices(rows: list[review.Row], form: FormData) -> None:
+def apply_choices(rows: list[review.Row], form: FormData, own_accounts: list[Account]) -> None:
     included = set(form.getlist("include"))
     for number, row in enumerate(rows):
         row.include = str(number) in included
         row.counterparty = " ".join(str(form.get(f"name_{number}", "")).split()) or row.tx.counterparty
-        row.category = str(form.get(f"category_{number}", ""))
+        row.choose(str(form.get(f"category_{number}", "")), own_accounts)
         remember = form.get(f"remember_{number}")
         row.remember = remember if remember in (review.REMEMBER, review.ONCE, review.ALWAYS_ASK) else review.ONCE
 
 
-def create_app(connect: Callable[[], FireflyClient], store: Store) -> FastAPI:
-    """`connect` opens a Firefly client; one is used per request."""
+def create_app(
+    connect: Callable[[], FireflyClient],
+    store: Store,
+    rates: Callable[[str, str, date, date], DailyRates] = fetch_rates,
+) -> FastAPI:
+    """`connect` opens a Firefly client; one is used per request. `rates` gets exchange rates."""
     app = FastAPI(title="Firefly uploader", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     uploads: dict[str, Upload] = {}  # in memory: gone when the app restarts
@@ -109,6 +107,19 @@ def create_app(connect: Callable[[], FireflyClient], store: Store) -> FastAPI:
                 return connection_of(firefly)
             except FireflyError as error:
                 return Connection(firefly.url, error=str(error))
+
+    def rows_for(
+        firefly: FireflyClient, statement: Statement, account: Account | None, own_accounts: list[Account]
+    ) -> list[review.Row]:
+        """Rows to review, converted into the account's currency. Raises RatesError."""
+        if account is None:
+            return review.prepare(statement, [], store.rules(), own_accounts=own_accounts)
+        start, end = review.search_range(statement)
+        daily = None
+        if account.currency != statement.currency:
+            daily = rates(statement.currency, account.currency, start, end)
+        booked = firefly.booked(account.id, start, end)
+        return review.prepare(statement, booked, store.rules(), rates=daily, own_accounts=own_accounts)
 
     @app.exception_handler(PageError)
     def page_error(request: Request, error: PageError) -> HTMLResponse:
@@ -148,17 +159,24 @@ def create_app(connect: Callable[[], FireflyClient], store: Store) -> FastAPI:
             accounts = [a for a in firefly.asset_accounts() if a.active]
             linked = account or store.linked_account(connection.key, statement.account)
             chosen = review.pick_account(statement, accounts, linked)
-            booked = firefly.booked(chosen.id, *review.search_range(statement)) if chosen else []
+            own_accounts = [a for a in accounts if a != chosen]
+            problem = "" if chosen else CHOOSE_ACCOUNT
+            try:
+                rows = rows_for(firefly, statement, chosen, own_accounts)
+            except RatesError as error:
+                problem, rows = str(error), review.prepare(statement, [], store.rules(), own_accounts=own_accounts)
             categories = firefly.categories()
             names = firefly.counterparty_names()
-        rules = store.rules()
+        # for the page's script, when a name is changed
+        rules = {
+            key: {"choice": review.choice_for(rule, own_accounts), "always_ask": rule.always_ask}
+            for key, rule in store.rules().items()
+        }
         return render(
             request, "review.html",
             connection=connection, upload_id=upload_id, upload=current, statement=statement,
-            accounts=accounts, account=chosen, problem=problem_with(statement, chosen),
-            categories=categories, names=names, rows=review.prepare(statement, booked, rules),
-            # for the page's script, when a name is changed
-            rules={key: {"category": rule.category, "always_ask": rule.always_ask} for key, rule in rules.items()},
+            accounts=accounts, account=chosen, own_accounts=own_accounts, problem=problem,
+            categories=categories, names=names, rows=rows, rules=rules,
         )
 
     @app.post("/review/{upload_id}", response_class=HTMLResponse)
@@ -171,12 +189,16 @@ def create_app(connect: Callable[[], FireflyClient], store: Store) -> FastAPI:
         statement = current.statement
         with connect() as firefly:
             connection = connection_of(firefly)
-            account = next((a for a in firefly.asset_accounts() if a.id == form.get("account")), None)
-            if problem := problem_with(statement, account):
-                raise PageError(problem)
-            booked = firefly.booked(account.id, *review.search_range(statement))
-            rows = review.prepare(statement, booked, store.rules())
-            apply_choices(rows, form)
+            accounts = [a for a in firefly.asset_accounts() if a.active]
+            account = next((a for a in accounts if a.id == form.get("account")), None)
+            if account is None:
+                raise PageError(CHOOSE_ACCOUNT)
+            own_accounts = [a for a in accounts if a != account]
+            try:
+                rows = rows_for(firefly, statement, account, own_accounts)
+            except RatesError as error:
+                raise PageError(str(error), 502) from error
+            apply_choices(rows, form, own_accounts)
             store.link_account(connection.key, statement.account, account.id)
             review.save_rules(rows, store)
             outcomes = review.send(rows, account.id, firefly)

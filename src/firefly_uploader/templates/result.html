@@ -7,7 +7,7 @@
   {{ counts.failed }} failed · {{ counts.skipped }} left out
 </p>
 <table class="rows">
-  <thead><tr><th>Result</th><th>Date</th><th>Merchant or person</th><th class="amount">Amount</th><th>Category</th></tr></thead>
+  <thead><tr><th>Result</th><th>Date</th><th>Merchant or person</th><th class="amount">Amount</th><th>Category or transfer</th></tr></thead>
   <tbody>
   {% for outcome in outcomes %}
     {% set tx = outcome.row.tx %}
@@ -21,9 +21,17 @@
         {% if outcome.message %}<div class="small">{{ outcome.message }}</div>{% endif %}
       </td>
       <td class="date">{{ tx.date }}</td>
-      <td><strong>{{ tx.counterparty }}</strong></td>
-      <td class="amount {{ 'out' if tx.amount < 0 else 'in' }}">{{ tx.amount|money }}&nbsp;{{ tx.currency }}</td>
-      <td>{{ outcome.row.category if outcome.status != "skipped" else "" }}</td>
+      <td><strong>{{ outcome.row.counterparty }}</strong></td>
+      {% set row = outcome.row %}
+      <td class="amount {{ 'out' if row.amount < 0 else 'in' }}">
+        {{ row.amount|money }}&nbsp;{{ row.conversion.currency if row.conversion else tx.currency }}
+        {% if row.conversion %}<div class="small">{{ tx.amount|money }}&nbsp;{{ tx.currency }}</div>{% endif %}
+      </td>
+      <td>
+        {% if outcome.status != "skipped" %}
+          {{ "Transfer: " ~ row.transfer_with.name if row.transfer_with else row.category }}
+        {% endif %}
+      </td>
     </tr>
   {% endfor %}
   </tbody>

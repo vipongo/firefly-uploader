@@ -2,6 +2,8 @@
 
 import json
 import re
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
@@ -9,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from firefly_uploader.firefly import FireflyClient
+from firefly_uploader.rates import DailyRates, RatesError
 from firefly_uploader.store import Rule, Store
 from firefly_uploader.web import create_app
 
@@ -28,7 +31,8 @@ class FakeFirefly:
     url = "https://firefly.example"
 
     def __init__(self):
-        self.accounts = {"12": ("UBS", "CHF"), "15": ("Cash wallet", "CHF"), "16": ("Revolut", "CHF")}
+        self.accounts = {"12": ("UBS", "CHF"), "15": ("Cash wallet", "CHF"), "16": ("Revolut", "CHF"),
+                         "17": ("Broker", "CHF")}
         self.categories = ["Groceries", "Investment", "Public Transport"]
         self.groups: dict[str, list[dict]] = {}  # per account
         self.created: list[dict] = []
@@ -65,12 +69,15 @@ class FakeFirefly:
             return httpx.Response(422, json={"message": "Duplicate of transaction #1."})
         self.created.append(split)
         group_id = str(100 + len(self.created))
-        account = split.get("source_id") or split["destination_id"]
-        self.groups.setdefault(account, []).append({"id": group_id, "attributes": {"transactions": [{
+        source, destination = split.get("source_id", "90"), split.get("destination_id", "91")
+        group = {"id": group_id, "attributes": {"transactions": [{
             "date": split["date"] + "T00:00:00+02:00", "amount": split["amount"],
-            "source_id": split.get("source_id", "90"), "destination_id": split.get("destination_id", "91"),
+            "source_id": source, "destination_id": destination,
             "description": split["description"], "external_id": split["external_id"],
-        }]}})
+            "foreign_amount": split.get("foreign_amount"), "foreign_currency_code": split.get("foreign_currency_code"),
+        }]}}
+        for account in {source, destination} & self.accounts.keys():  # a transfer shows on both
+            self.groups.setdefault(account, []).append(group)
         return httpx.Response(200, json={"data": {"id": group_id}})
 
 
@@ -84,9 +91,13 @@ def store(tmp_path) -> Store:
     return Store(tmp_path / "uploader.db")
 
 
+def fake_rates(source, target, start, end) -> DailyRates:
+    return DailyRates(source, target, {date(2026, 8, 31): Decimal("0.94")})
+
+
 @pytest.fixture
 def browser(firefly, store) -> TestClient:
-    return TestClient(create_app(firefly.connect, store))
+    return TestClient(create_app(firefly.connect, store, rates=fake_rates))
 
 
 def upload(browser, data=UBS, filename="ubs.csv") -> httpx.Response:
@@ -159,14 +170,53 @@ def test_sending_twice_is_refused_by_firefly(browser, firefly):
     assert len(firefly.created) == 1
 
 
-def test_foreign_currency_is_blocked_for_now(browser, firefly):
+def test_foreign_currency_is_converted(browser, firefly):
     response = upload(browser, REVOLUT_EUR, "revolut.csv")
+    review_url = str(response.url)
 
     assert '<option value="16" selected>Revolut (CHF)</option>' in response.text
-    assert "This statement is in EUR but Revolut is in CHF" in response.text
+    assert "converted from EUR to CHF" in response.text
+    assert "-37.60&nbsp;CHF" in rows_of(response.text)[0]  # -40.00 EUR at 0.94
+    assert "-40.00&nbsp;EUR at 0.94 (2026-08-31)" in rows_of(response.text)[0]
+
+    browser.post(review_url, data={"account": "16", "include": ["0"], "remember_0": "once"})
+
+    [split] = firefly.created
+    assert (split["amount"], split["currency_code"]) == ("37.60", "CHF")
+    assert (split["foreign_amount"], split["foreign_currency_code"]) == ("40.00", "EUR")
+    assert "Already uploaded" in rows_of(browser.get(review_url).text)[0]
+
+
+def test_no_rates_no_sending(firefly, store):
+    def no_rates(*args):
+        raise RatesError("Couldn't get EUR to CHF exchange rates from frankfurter.dev: offline")
+
+    browser = TestClient(create_app(firefly.connect, store, rates=no_rates))
+    response = upload(browser, REVOLUT_EUR, "revolut.csv")
+
+    assert "Couldn&#39;t get EUR to CHF exchange rates" in response.text
     assert '<button id="send" disabled data-blocked>' in response.text
-    assert browser.post(str(response.url), data={"account": "16", "include": ["0"]}).status_code == 400
+    assert browser.post(str(response.url), data={"account": "16", "include": ["0"]}).status_code == 502
     assert firefly.created == []
+
+
+def test_transfer_to_own_account_is_offered_and_remembered(browser, firefly, store):
+    response = upload(browser)
+    review_url = str(response.url)
+    broker_row = 6  # Example Broker Ltd.
+
+    assert '<option value="transfer:17">Broker</option>' in rows_of(response.text)[broker_row]
+    assert '<option value="transfer:12">' not in response.text  # not the statement's own account
+
+    browser.post(review_url, data={"account": "12", "include": [str(broker_row)],
+                                   f"category_{broker_row}": "transfer:17", f"remember_{broker_row}": "remember"})
+
+    [split] = firefly.created
+    assert (split["type"], split["source_id"], split["destination_id"], split["amount"]) == ("transfer", "12", "17", "500.00")
+    assert store.rules() == {"example broker ltd.": Rule(transfer_account="Broker")}
+    row = rows_of(browser.get(review_url).text)[broker_row]
+    assert '<option value="transfer:17" selected>Broker</option>' in row
+    assert 'class="small remembered">' in row
 
 
 def test_switching_account(browser):

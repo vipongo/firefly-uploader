@@ -22,6 +22,16 @@ class Transaction:
 
 
 @dataclass
+class Conversion:
+    """A bank amount in the currency of the Firefly account it is booked on."""
+
+    amount: Decimal  # signed, in `currency`, rounded to cents
+    currency: str
+    rate: Decimal  # units of `currency` per unit of the bank's currency
+    rate_date: date  # the business day the rate is from
+
+
+@dataclass
 class Statement:
     bank: str  # "ubs" or "revolut"
     account: str  # IBAN for UBS, "revolut-EUR" style for Revolut

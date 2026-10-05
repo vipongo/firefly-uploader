@@ -14,7 +14,7 @@ from firefly_uploader.firefly import (
     FireflyUnreachableError,
     split_for,
 )
-from firefly_uploader.models import Transaction
+from firefly_uploader.models import Conversion, Transaction
 
 
 def client(handler) -> FireflyClient:
@@ -174,3 +174,34 @@ def test_split_for_incoming_money():
     assert split["destination_id"] == "1"
     assert split["amount"] == "6.50"
     assert not {"notes", "book_date", "category_name"} & split.keys()
+
+
+def test_split_for_converted_amount():
+    conversion = Conversion(Decimal("-39.78"), "CHF", Decimal("0.9424"), date(2026, 10, 4))
+
+    split = split_for(purchase(amount=Decimal("-42.21"), currency="EUR"), "16", conversion=conversion)
+
+    assert (split["amount"], split["currency_code"]) == ("39.78", "CHF")
+    assert (split["foreign_amount"], split["foreign_currency_code"]) == ("42.21", "EUR")
+
+
+@pytest.mark.parametrize(("amount", "source", "destination"), [("-500.00", "12", "17"), ("200.00", "17", "12")])
+def test_split_for_transfer_between_own_accounts(amount, source, destination):
+    split = split_for(purchase(amount=Decimal(amount)), "12", transfer_with="17")
+
+    assert (split["type"], split["source_id"], split["destination_id"]) == ("transfer", source, destination)
+    assert not {"source_name", "destination_name"} & split.keys()
+
+
+def test_booked_reads_the_foreign_amount():
+    def handler(request):
+        return httpx.Response(200, json=page([{"id": "1", "attributes": {"transactions": [firefly_split(
+            amount="39.780000000000", source_id="16", destination_id="40",
+            foreign_amount="42.210000000000", foreign_currency_code="EUR",
+        )]}}]))
+
+    [booked] = client(handler).booked("16", date(2026, 9, 1), date(2026, 9, 30))
+
+    assert (booked.amount, booked.foreign_amount, booked.foreign_currency) == (
+        Decimal("-39.78"), Decimal("-42.21"), "EUR"
+    )

@@ -5,6 +5,9 @@
 <p class="summary">
   {{ statement.bank|upper }} {{ statement.account }} · {{ rows|length }} transactions
   from {{ rows|map(attribute="tx.date")|min }} to {{ rows|map(attribute="tx.date")|max }}
+  {% if rows[0].conversion %}
+    · converted from {{ statement.currency }} to {{ account.currency }} at the European Central Bank's rate of each day
+  {% endif %}
 </p>
 {% for warning in statement.warnings %}<p class="message warning">{{ warning }}</p>{% endfor %}
 
@@ -25,7 +28,7 @@
   <input type="hidden" name="account" value="{{ account.id if account else '' }}">
   <table class="rows">
     <thead>
-      <tr><th>Send</th><th>Date</th><th>Merchant or person</th><th class="amount">Amount</th><th>Category</th><th>Next time</th></tr>
+      <tr><th>Send</th><th>Date</th><th>Merchant or person</th><th class="amount">Amount</th><th>Category or transfer</th><th>Next time</th></tr>
     </thead>
     <tbody>
     {% for row in rows %}
@@ -45,18 +48,32 @@
           {% if row.tx.method %}<div class="small">{{ row.tx.method }}</div>{% endif %}
           {% if row.in_firefly %}
             <div class="note">
-              {% if row.same_id %}Already uploaded{% else %}Maybe already in Firefly: {{ row.in_firefly.date }} “{{ row.in_firefly.description }}”{% endif %}
+              {% if row.same_id %}Already uploaded{% else %}Maybe already in Firefly: {{ row.in_firefly.date }} “{{ row.in_firefly.description }}” {{ row.in_firefly.amount|money }}{% endif %}
               · <a href="{{ connection.url }}/transactions/show/{{ row.in_firefly.id }}" target="_blank" rel="noopener">open</a>
             </div>
           {% endif %}
         </td>
-        <td class="amount {{ 'out' if row.tx.amount < 0 else 'in' }}">{{ row.tx.amount|money }}&nbsp;{{ row.tx.currency }}</td>
+        <td class="amount {{ 'out' if row.amount < 0 else 'in' }}">
+          {{ row.amount|money }}&nbsp;{{ row.conversion.currency if row.conversion else row.tx.currency }}
+          {% if row.conversion %}
+            <div class="small">{{ row.tx.amount|money }}&nbsp;{{ row.tx.currency }} at {{ row.conversion.rate|rate }}{% if row.conversion.rate_date != row.tx.date %} ({{ row.conversion.rate_date }}){% endif %}</div>
+          {% endif %}
+        </td>
         <td>
-          <select name="category_{{ n }}" data-sync="category" data-key="{{ key }}" aria-label="Category">
+          <select name="category_{{ n }}" data-sync="category" data-key="{{ key }}" aria-label="Category or transfer">
             <option value="">(none)</option>
-            {% for category in categories %}
-              <option{{ " selected" if category == row.category }}>{{ category }}</option>
-            {% endfor %}
+            <optgroup label="Categories">
+              {% for category in categories %}
+                <option{{ " selected" if category == row.choice }}>{{ category }}</option>
+              {% endfor %}
+            </optgroup>
+            {% if own_accounts %}
+              <optgroup label="Transfer to or from own account">
+                {% for a in own_accounts %}
+                  <option value="transfer:{{ a.id }}"{{ " selected" if row.choice == "transfer:" ~ a.id }}>{{ a.name }}</option>
+                {% endfor %}
+              </optgroup>
+            {% endif %}
           </select>
           <div class="small remembered"{{ " hidden" if not row.from_rule }}>remembered</div>
         </td>

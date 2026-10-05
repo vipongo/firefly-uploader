@@ -10,8 +10,9 @@ from pathlib import Path
 SCHEMA = """
 create table if not exists rules (
     counterparty text primary key,  -- see counterparty_key()
-    category text,                  -- null when always_ask
-    always_ask integer not null default 0
+    category text,                  -- null when always_ask or a transfer
+    always_ask integer not null default 0,
+    transfer_account text           -- name of an own Firefly asset account: money moves there
 );
 -- Account IDs only mean something for one Firefly user, hence firefly_user ("email @ url")
 create table if not exists account_links (
@@ -27,6 +28,7 @@ create table if not exists account_links (
 class Rule:
     category: str | None = None
     always_ask: bool = False
+    transfer_account: str | None = None  # a name, as account IDs differ between Firefly users
 
 
 def counterparty_key(name: str) -> str:
@@ -39,6 +41,9 @@ class Store:
         self.path = Path(path)
         with self._db() as db:
             db.executescript(SCHEMA)
+            columns = {row[1] for row in db.execute("pragma table_info(rules)")}
+            if "transfer_account" not in columns:  # databases from before transfers
+                db.execute("alter table rules add column transfer_account text")
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
@@ -48,8 +53,8 @@ class Store:
 
     def rules(self) -> dict[str, Rule]:
         with self._db() as db:
-            rows = db.execute("select counterparty, category, always_ask from rules").fetchall()
-        return {key: Rule(category, bool(always_ask)) for key, category, always_ask in rows}
+            rows = db.execute("select counterparty, category, always_ask, transfer_account from rules").fetchall()
+        return {key: Rule(category, bool(always_ask), transfer) for key, category, always_ask, transfer in rows}
 
     def remember(self, counterparty: str, category: str) -> None:
         self._save_rule(counterparty, Rule(category=category))
@@ -57,11 +62,15 @@ class Store:
     def always_ask(self, counterparty: str) -> None:
         self._save_rule(counterparty, Rule(always_ask=True))
 
+    def remember_transfer(self, counterparty: str, account_name: str) -> None:
+        self._save_rule(counterparty, Rule(transfer_account=account_name))
+
     def _save_rule(self, counterparty: str, rule: Rule) -> None:
         with self._db() as db:
             db.execute(
-                "insert or replace into rules (counterparty, category, always_ask) values (?, ?, ?)",
-                (counterparty_key(counterparty), rule.category, int(rule.always_ask)),
+                "insert or replace into rules (counterparty, category, always_ask, transfer_account)"
+                " values (?, ?, ?, ?)",
+                (counterparty_key(counterparty), rule.category, int(rule.always_ask), rule.transfer_account),
             )
 
     def linked_account(self, firefly_user: str, statement_account: str) -> str | None:

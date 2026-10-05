@@ -23,7 +23,10 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
   `parsers.parse(bytes)` detects the bank and picks the right one
 - `src/firefly_uploader/firefly.py`: API client (`FireflyClient.from_env`) and `split_for(tx, ...)`,
   which turns a `Transaction` into a Firefly split
-- `src/firefly_uploader/review.py`: review rows (remembered category, already in Firefly?) and sending
+- `src/firefly_uploader/review.py`: review rows (remembered category or transfer, conversion,
+  already in Firefly?) and sending
+- `src/firefly_uploader/rates.py`: ECB daily rates from frankfurter.dev (asked against EUR, other
+  pairs divided out for precision; weekends use the last business day)
 - `src/firefly_uploader/store.py`: SQLite: category rules per merchant, statement → Firefly account
   links (per Firefly user, since account IDs differ between users)
 - `src/firefly_uploader/web.py` + `templates/` + `static/`: FastAPI app, server-rendered forms
@@ -36,10 +39,12 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
 - Real bank statements live in `samples/` (gitignored). Never commit them. Fixtures copy only the
   format of a real export; all values in them are invented.
 - Personal rules (e.g. payments to a broker are transfers to an own investment account, who a
-  transfer went to) go in user settings or the database, not in code.
+  transfer went to) go in user settings or the database, not in code. Transfer rules store the
+  target account's name, so they work for any Firefly user with an account of that name.
 - Amounts are `Decimal`, signed: negative = money out, fees included.
-- Revolut EUR/HUF transactions are converted to CHF and booked into one CHF Firefly account;
-  the original amount goes into Firefly's foreign-amount field. Balances needn't match exactly.
+- Revolut EUR/HUF transactions are converted to CHF (ECB rate of the day) and booked into one
+  CHF Firefly account; the original amount goes into Firefly's foreign-amount field. Balances
+  needn't match exactly. Generally: whenever statement and account currency differ.
 - Firefly users: `.env` currently holds a token for a separate test user on the real instance, which
   has no real data; uploads during development go there. Writing as the real user (by swapping the
   token) needs the user's explicit OK. Automated tests only use the local throwaway instance.

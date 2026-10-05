@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -13,6 +14,7 @@ from firefly_uploader.firefly import (
     FireflyUnreachableError,
 )
 from firefly_uploader.models import Statement, Transaction
+from firefly_uploader.rates import DailyRates
 from firefly_uploader.store import Rule, Store
 
 
@@ -194,3 +196,71 @@ def test_rules_are_saved_under_the_chosen_name(store):
     review.save_rules([row], store)
 
     assert store.rules() == {"jane doe": Rule("Gifts")}
+
+
+EUR_TO_CHF = DailyRates("EUR", "CHF", {date(2026, 10, 1): Decimal("0.94")})
+
+
+def eur(amount, counterparty="Shop") -> Transaction:
+    return replace(tx(counterparty, amount), currency="EUR")
+
+
+def test_conversion_into_the_accounts_currency():
+    [row] = review.prepare(statement(eur("-40.00")), [], {}, rates=EUR_TO_CHF)
+
+    assert (row.amount, row.conversion.currency, row.tx.amount) == (Decimal("-37.60"), "CHF", Decimal("-40.00"))
+
+
+def test_converted_by_hand_with_another_rate_is_still_found():
+    [close, far] = review.prepare(
+        statement(eur("-40.00"), eur("-80.00")), [booked("-38.50"), booked("-70.00")], {}, rates=EUR_TO_CHF,
+    )
+
+    assert close.in_firefly is not None  # 38.50 is within 3% of 37.60
+    assert far.in_firefly is None  # 70.00 is 7% off 75.20
+
+
+def test_found_by_foreign_amount():
+    typed_in = replace(booked("-41.00"), foreign_amount=Decimal("-40.00"), foreign_currency="EUR")
+
+    [row] = review.prepare(statement(eur("-40.00")), [typed_in], {}, rates=EUR_TO_CHF)
+
+    assert row.in_firefly is typed_in
+
+
+OWN = [Account("16", "Revolut", "CHF"), Account("17", "Broker", "CHF")]
+
+
+def test_remembered_transfer_selects_the_account_by_name():
+    [row] = review.prepare(statement(tx("Example Broker Ltd.")), [], {"example broker ltd.": Rule(transfer_account="broker")},
+                           own_accounts=OWN)
+
+    assert (row.transfer_with, row.choice, row.from_rule) == (OWN[1], "transfer:17", True)
+
+
+def test_remembered_transfer_to_a_missing_account_asks_again():
+    [row] = review.prepare(statement(tx("Example Broker Ltd.")), [], {"example broker ltd.": Rule(transfer_account="Old broker")},
+                           own_accounts=OWN)
+
+    assert (row.transfer_with, row.choice, row.from_rule) == (None, "", False)
+
+
+def test_transfer_is_remembered_by_account_name(store):
+    [row] = review.prepare(statement(tx("Example Broker Ltd.")), [], {}, own_accounts=OWN)
+    row.choose("transfer:17", OWN)
+
+    review.save_rules([row], store)
+
+    assert store.rules() == {"example broker ltd.": Rule(transfer_account="Broker")}
+
+
+def test_rules_from_before_transfers_are_kept(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    with sqlite3.connect(path) as db:
+        db.execute("create table rules (counterparty text primary key, category text, always_ask integer not null default 0)")
+        db.execute("insert into rules values ('sbb easyride', 'Public Transport', 0)")
+    db.close()
+
+    assert Store(path).rules() == {"sbb easyride": Rule("Public Transport")}

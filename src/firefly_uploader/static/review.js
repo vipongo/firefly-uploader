@@ -30,9 +30,9 @@ for (const input of document.querySelectorAll("input.name")) {
     const remember = selectOf(tr, "remember");
     const rule = rules[key];
     category.dataset.key = remember.dataset.key = key;
-    if (!category.dataset.touched) category.value = rule?.category ?? "";
+    if (!category.dataset.touched) category.value = rule?.choice ?? "";
     if (!remember.dataset.touched) remember.value = rule?.always_ask ? "always_ask" : "remember";
-    tr.querySelector(".remembered").hidden = !(rule?.category && category.value === rule.category);
+    tr.querySelector(".remembered").hidden = !(rule?.choice && category.value === rule.choice);
     const original = tr.querySelector(".original");
     if (original) original.hidden = key === merchantKey(input.dataset.original);
   });

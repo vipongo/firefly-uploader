@@ -9,7 +9,7 @@ from decimal import Decimal
 import httpx
 from dotenv import load_dotenv
 
-from .models import Transaction
+from .models import Conversion, Transaction
 
 
 class FireflyError(Exception):
@@ -42,6 +42,8 @@ class Booked:
     amount: Decimal  # signed like `Transaction.amount`: negative = money left the account
     description: str
     external_id: str | None = None
+    foreign_amount: Decimal | None = None  # signed like `amount`
+    foreign_currency: str | None = None
 
 
 class FireflyClient:
@@ -152,29 +154,51 @@ def _account(item: dict) -> Account:
 
 
 def _booked(group_id: str, split: dict, account_id: str) -> Booked:
-    amount = Decimal(split["amount"])
+    sign = -1 if split["source_id"] == account_id else 1
+    foreign = split.get("foreign_amount")
     return Booked(
         id=group_id,
         date=date.fromisoformat(split["date"][:10]),  # local date, e.g. 2026-10-05T00:00:00+02:00
-        amount=-amount if split["source_id"] == account_id else amount,
+        amount=sign * Decimal(split["amount"]),
         description=split["description"],
         external_id=split.get("external_id") or None,
+        foreign_amount=sign * Decimal(foreign) if foreign else None,
+        foreign_currency=split.get("foreign_currency_code") if foreign else None,
     )
 
 
-def split_for(tx: Transaction, account_id: str, category: str | None = None) -> dict:
-    """Firefly split for money leaving (withdrawal) or arriving on (deposit) an asset account."""
-    if tx.amount < 0:
+def split_for(
+    tx: Transaction,
+    account_id: str,
+    category: str | None = None,
+    *,
+    conversion: Conversion | None = None,
+    transfer_with: str | None = None,
+) -> dict:
+    """Firefly split for money leaving or arriving on an asset account.
+
+    conversion: the amount in the account's currency, when the bank's differs; the bank's
+        amount then becomes Firefly's foreign amount.
+    transfer_with: another own asset account; the money moves between the two (a transfer)
+        instead of going to or coming from a shop or person.
+    """
+    amount, currency = (conversion.amount, conversion.currency) if conversion else (tx.amount, tx.currency)
+    if transfer_with:
+        source, destination = (account_id, transfer_with) if amount < 0 else (transfer_with, account_id)
+        split = {"type": "transfer", "source_id": source, "destination_id": destination}
+    elif amount < 0:
         split = {"type": "withdrawal", "source_id": account_id, "destination_name": tx.counterparty}
     else:
         split = {"type": "deposit", "source_name": tx.counterparty, "destination_id": account_id}
     split |= {
         "date": tx.date.isoformat(),
-        "amount": str(abs(tx.amount)),
-        "currency_code": tx.currency,
+        "amount": str(abs(amount)),
+        "currency_code": currency,
         "description": tx.description or tx.counterparty,
         "external_id": tx.external_id,
     }
+    if conversion:
+        split |= {"foreign_amount": str(abs(tx.amount)), "foreign_currency_code": tx.currency}
     if tx.book_date:
         split["book_date"] = tx.book_date.isoformat()
     if tx.notes:
