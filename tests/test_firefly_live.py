@@ -46,7 +46,8 @@ def test_uploads_a_purchase_once(firefly):
 
     firefly.create_transaction([split])
 
-    assert tx.external_id in firefly.external_ids(ubs.id, tx.date, tx.date)
+    booked = firefly.booked(ubs.id, tx.date, tx.date)
+    assert [b.amount for b in booked if b.external_id == tx.external_id] == [tx.amount]
     assert "Groceries" in firefly.categories()
     with pytest.raises(DuplicateTransactionError):
         firefly.create_transaction([split])

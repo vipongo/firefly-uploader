@@ -12,6 +12,8 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
   `docker compose -f dev/firefly-test/compose.yml up -d`, then `.venv\Scripts\python dev\firefly-test\setup.py`
   (creates the user, writes `FIREFLY_TEST_*` to `.env`, CHF + "UBS"/"Revolut" accounts).
   Reset with `down -v` and run setup again. Ports 7439-8298 are reserved by Windows on this PC.
+- Run the web app: `.venv\Scripts\python -m firefly_uploader serve [--test]` → http://127.0.0.1:8765
+  (remembered answers in `uploader.db`, or `UPLOADER_DB`)
 - Check a connection (read-only): `.venv\Scripts\python -m firefly_uploader check [--test]`
 
 ## Layout
@@ -21,6 +23,10 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
   `parsers.parse(bytes)` detects the bank and picks the right one
 - `src/firefly_uploader/firefly.py`: API client (`FireflyClient.from_env`) and `split_for(tx, ...)`,
   which turns a `Transaction` into a Firefly split
+- `src/firefly_uploader/review.py`: review rows (remembered category, already in Firefly?) and sending
+- `src/firefly_uploader/store.py`: SQLite: category rules per merchant, statement → Firefly account
+  links (per Firefly user, since account IDs differ between users)
+- `src/firefly_uploader/web.py` + `templates/` + `static/`: FastAPI app, server-rendered forms
 - `tests/fixtures/`: made-up statements in the exact format of real exports
 
 ## Rules
@@ -39,5 +45,6 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
   token) needs the user's explicit OK. Automated tests only use the local throwaway instance.
   `check` prints which user a token belongs to; the web app must show it too.
 - The Firefly token goes in `.env` (gitignored), never in code or chat. See `.env.example`.
-- Duplicates: every split carries the bank's `external_id`; check `external_ids()` before uploading.
+- Duplicates: every split carries the bank's `external_id`; the review marks rows whose
+  `external_id` (or amount within a few days) is already `booked()` in Firefly.
   Firefly also rejects exact copies (`DuplicateTransactionError`) as a safety net.

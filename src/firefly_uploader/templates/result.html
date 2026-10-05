@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Sent {{ upload.filename }}{% endblock %}
+{% block main %}
+<h1>Sent to {{ account.name }}</h1>
+<p class="summary">
+  {{ counts.created }} created · {{ counts.duplicate }} already in Firefly ·
+  {{ counts.failed }} failed · {{ counts.skipped }} left out
+</p>
+<table class="rows">
+  <thead><tr><th>Result</th><th>Date</th><th>Merchant or person</th><th class="amount">Amount</th><th>Category</th></tr></thead>
+  <tbody>
+  {% for outcome in outcomes %}
+    {% set tx = outcome.row.tx %}
+    <tr class="{{ outcome.status }}">
+      <td>
+        {% if outcome.status == "created" %}
+          <a href="{{ connection.url }}/transactions/show/{{ outcome.firefly_id }}" target="_blank" rel="noopener">created</a>
+        {% elif outcome.status == "duplicate" %}already in Firefly
+        {% elif outcome.status == "failed" %}<span class="bad">failed</span>
+        {% else %}left out{% endif %}
+        {% if outcome.message %}<div class="small">{{ outcome.message }}</div>{% endif %}
+      </td>
+      <td class="date">{{ tx.date }}</td>
+      <td><strong>{{ tx.counterparty }}</strong></td>
+      <td class="amount {{ 'out' if tx.amount < 0 else 'in' }}">{{ tx.amount|money }}&nbsp;{{ tx.currency }}</td>
+      <td>{{ outcome.row.category if outcome.status != "skipped" else "" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="actions"><a href="/review/{{ upload_id }}">Back to the review</a> · <a href="/">Upload another statement</a></p>
+{% endblock %}

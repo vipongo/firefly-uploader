@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Firefly uploader{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="/">Firefly uploader</a>
+  {% if connection %}
+    {% if connection.error %}
+      <span class="connection bad">Firefly at {{ connection.host }}: {{ connection.error }}</span>
+    {% else %}
+      <span class="connection">Firefly {{ connection.version }} at {{ connection.host }} as <strong>{{ connection.user }}</strong></span>
+    {% endif %}
+  {% endif %}
+</header>
+<main>
+{% block main %}{% endblock %}
+</main>
+</body>
+</html>

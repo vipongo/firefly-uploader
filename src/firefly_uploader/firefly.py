@@ -4,6 +4,7 @@ import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 
 import httpx
 from dotenv import load_dotenv
@@ -30,6 +31,17 @@ class Account:
     currency: str
     iban: str | None = None
     active: bool = True
+
+
+@dataclass
+class Booked:
+    """A transaction already in Firefly, as seen from one asset account."""
+
+    id: str  # of the transaction group, as in /transactions/show/<id>
+    date: date
+    amount: Decimal  # signed like `Transaction.amount`: negative = money left the account
+    description: str
+    external_id: str | None = None
 
 
 class FireflyClient:
@@ -72,17 +84,25 @@ class FireflyClient:
     def categories(self) -> list[str]:
         return sorted(item["attributes"]["name"] for item in self._pages("/categories"))
 
-    def external_ids(self, account_id: str, start: date, end: date) -> set[str]:
-        """External IDs of the transactions booked on an account between two dates (inclusive)."""
+    def counterparty_names(self) -> list[str]:
+        """Names of the expense and revenue accounts: the shops and people seen before."""
+        names = {
+            item["attributes"]["name"]
+            for kind in ("expense", "revenue")
+            for item in self._pages("/accounts", {"type": kind})
+        }
+        return sorted(names, key=str.casefold)
+
+    def booked(self, account_id: str, start: date, end: date) -> list[Booked]:
+        """Transactions on an asset account between two dates (inclusive)."""
         # Firefly refuses start == end; a day too many is harmless for spotting duplicates.
         end = max(end, start + timedelta(days=1))
         params = {"start": start.isoformat(), "end": end.isoformat()}
-        return {
-            split["external_id"]
+        return [
+            _booked(group["id"], split, account_id)
             for group in self._pages(f"/accounts/{account_id}/transactions", params)
             for split in group["attributes"]["transactions"]
-            if split.get("external_id")
-        }
+        ]
 
     def create_transaction(self, splits: list[dict]) -> str:
         """Create a transaction from one or more splits and return its ID."""
@@ -128,6 +148,17 @@ def _account(item: dict) -> Account:
         currency=attributes["currency_code"],
         iban=attributes.get("iban") or None,
         active=attributes["active"],
+    )
+
+
+def _booked(group_id: str, split: dict, account_id: str) -> Booked:
+    amount = Decimal(split["amount"])
+    return Booked(
+        id=group_id,
+        date=date.fromisoformat(split["date"][:10]),  # local date, e.g. 2026-10-05T00:00:00+02:00
+        amount=-amount if split["source_id"] == account_id else amount,
+        description=split["description"],
+        external_id=split.get("external_id") or None,
     )
 
 

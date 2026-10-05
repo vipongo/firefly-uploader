@@ -56,18 +56,37 @@ def test_asset_accounts():
     assert (account.id, account.name, account.currency, account.iban) == ("1", "UBS", "CHF", None)
 
 
-def test_external_ids_of_an_account():
+def firefly_split(**values) -> dict:
+    return {"date": "2026-09-03T00:00:00+02:00", "description": "Shop", "external_id": None} | values
+
+
+def test_booked_transactions_are_signed_from_the_accounts_view():
     def handler(request):
         assert request.url.path == "/api/v1/accounts/7/transactions"
         assert request.url.params["start"] == "2026-09-01"
         assert request.url.params["end"] == "2026-09-30"
         groups = [
-            {"id": "1", "attributes": {"transactions": [{"external_id": "a"}, {"external_id": None}]}},
-            {"id": "2", "attributes": {"transactions": [{"external_id": "b"}]}},
+            {"id": "1", "attributes": {"transactions": [
+                firefly_split(amount="12.500000000000", source_id="7", destination_id="40", external_id="a"),
+            ]}},
+            {"id": "2", "attributes": {"transactions": [
+                firefly_split(amount="100.000000000000", source_id="41", destination_id="7"),
+            ]}},
         ]
         return httpx.Response(200, json=page(groups))
 
-    assert client(handler).external_ids("7", date(2026, 9, 1), date(2026, 9, 30)) == {"a", "b"}
+    out, back = client(handler).booked("7", date(2026, 9, 1), date(2026, 9, 30))
+
+    assert (out.id, out.date, out.amount, out.external_id) == ("1", date(2026, 9, 3), Decimal("-12.5"), "a")
+    assert (back.id, back.amount, back.external_id) == ("2", Decimal("100"), None)
+
+
+def test_booked_on_a_single_day_asks_for_two():
+    def handler(request):
+        assert (request.url.params["start"], request.url.params["end"]) == ("2026-09-03", "2026-09-04")
+        return httpx.Response(200, json=page([]))
+
+    assert client(handler).booked("7", date(2026, 9, 3), date(2026, 9, 3)) == []
 
 
 def test_create_transaction_refuses_duplicates():
