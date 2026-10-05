@@ -1,0 +1,18 @@
+﻿Account number:;0000 00000000.00;
+IBAN:;CH12 3456 7890 1234 5678 9;
+From:;2026-10-01;
+Until:;2026-10-05;
+Opening balance:;2500.00;
+Closing balance:;1918.85;
+Valued in:;CHF;
+Numbers of transactions in this period:;8;
+
+Trade date;Trade time;Booking date;Value date;Currency;Debit;Credit;Individual amount;Balance;Transaction no.;Description1;Description2;Description3;Footnotes;
+2026-10-05;;2026-10-05;2026-10-05;CHF;-6.50;;;1918.85;1000005GK0000008;"SBB EASYRIDE; Payment UBS TWINT";;"Reason for payment: - na, 3000 Bern; TWINT-Acc.:+41790000000; Transaction no. 1000005GK0000008";;
+2026-10-05;;2026-10-05;2026-10-05;CHF;;6.50;;1925.35;1000005GK0000007;SBB EasyRide;Reversal UBS TWINT;"Reason for payment: - na, 3000 Bern; TWINT-Acc.:+41790000000; Transaction no. 1000005GK0000007";;
+2026-10-04;;2026-10-05;2026-10-04;CHF;-42.35;;;1918.85;1000004GK0000006;"MUSTER BAECKEREI AG; Payment UBS TWINT";;"Reason for payment: Musterstrasse 1 na, 8000 ZuerichTWINT-Acc.:+41790000000; Transaction no. 1000004GK0000006";;
+2026-10-04;;2026-10-05;2026-10-04;CHF;-24.90;;;1961.20;1000004GK0000005;"BUCHHANDLUNG BEISPIEL; Payment UBS TWINT";;"Reason for payment: Beispielweg 2, 3000 Bern; TWINT-Acc.:+41790000000; Transaction no. 1000004GK0000005";;
+2026-10-04;;2026-10-05;2026-10-04;CHF;-4.40;;;1986.10;1000004GK0000004;"SBB EASYRIDE; Payment UBS TWINT";;"Reason for payment: - na, 3000 Bern; TWINT-Acc.:+41790000000; Transaction no. 1000004GK0000004";;
+2026-10-03;;2026-10-05;2026-10-03;CHF;-3.60;;;1990.50;1000003GK0000003;"SBB EASYRIDE; Payment UBS TWINT";;"Reason for payment: - na, 3000 Bern; TWINT-Acc.:+41790000000; Transaction no. 1000003GK0000003";;
+2026-10-01;;2026-10-01;2026-10-01;CHF;-500.00;;;1994.10;1000001TO0000002;"Example Broker Ltd.;Harbour Road 1; VG1110 Tortola; VG";e-banking payment order;"Reason for payment: TEST REF0 0000 0000; Account no. IBAN: LI98 7654 3210 9876 5432 1; Costs: E-Banking domestic; Transaction no. 1000001TO0000002";;
+2026-10-01;;2026-10-01;2026-10-01;CHF;-5.90;;;2494.10;1000001GK0000001;"SBB EASYRIDE; Payment UBS TWINT";;"Reason for payment: - na, 3000 Bern; TWINT-Acc.:+41790000000; Transaction no. 1000001GK0000001";;

@@ -1,0 +1,41 @@
+# Throwaway Firefly III for testing the uploader. Same version as the real instance.
+# Start:  docker compose -f dev/firefly-test/compose.yml up -d
+# Reset:  docker compose -f dev/firefly-test/compose.yml down -v
+# The passwords below only protect this local test instance; it listens on localhost only.
+name: firefly-test
+
+services:
+  app:
+    image: fireflyiii/core:version-6.7.7
+    depends_on:
+      - db
+    ports:
+      - "127.0.0.1:18081:8080"
+    environment:
+      APP_KEY: ThrowawayTestKeyOfExactly32Char!
+      APP_URL: http://localhost:18081
+      SITE_OWNER: test@example.com
+      TZ: Europe/Zurich
+      DEFAULT_LANGUAGE: en_US
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: firefly
+      DB_USERNAME: firefly
+      DB_PASSWORD: firefly
+    volumes:
+      - upload:/var/www/html/storage/upload
+
+  db:
+    image: mariadb:lts
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+      MYSQL_DATABASE: firefly
+      MYSQL_USER: firefly
+      MYSQL_PASSWORD: firefly
+    volumes:
+      - db:/var/lib/mysql
+
+volumes:
+  upload:
+  db:
