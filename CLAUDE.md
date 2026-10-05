@@ -34,7 +34,10 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
 - Amounts are `Decimal`, signed: negative = money out, fees included.
 - Revolut EUR/HUF transactions are converted to CHF and booked into one CHF Firefly account;
   the original amount goes into Firefly's foreign-amount field. Balances needn't match exactly.
-- Never write to the real Firefly instance without the user's OK; test against a throwaway instance.
+- Firefly users: `.env` currently holds a token for a separate test user on the real instance, which
+  has no real data; uploads during development go there. Writing as the real user (by swapping the
+  token) needs the user's explicit OK. Automated tests only use the local throwaway instance.
+  `check` prints which user a token belongs to; the web app must show it too.
 - The Firefly token goes in `.env` (gitignored), never in code or chat. See `.env.example`.
 - Duplicates: every split carries the bank's `external_id`; check `external_ids()` before uploading.
   Firefly also rejects exact copies (`DuplicateTransactionError`) as a safety net.

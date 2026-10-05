@@ -2,6 +2,8 @@
 name = "firefly-uploader"
 version = "0.1.0"
 description = "Upload UBS and Revolut statements into Firefly III"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = ["httpx>=0.28", "python-dotenv>=1.0"]
 
@@ -9,7 +11,7 @@ dependencies = ["httpx>=0.28", "python-dotenv>=1.0"]
 dev = ["pytest>=8"]
 
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
