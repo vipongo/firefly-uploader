@@ -37,6 +37,9 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
 - `src/firefly_uploader/auth.py`: scrypt passwords, session secrets, token encryption (Fernet)
 - `src/firefly_uploader/web.py` + `templates/` + `static/`: FastAPI app, server-rendered forms.
   Every POST form carries `csrf` (the session's token) and is checked with `check_form()`.
+- `src/firefly_uploader/static/vendor/`: AdminLTE 4, Bootstrap 5, Bootstrap Icons (MIT) and Tom Select
+  (Apache-2.0, the searchable category list), fetched by `dev/vendor.py` (pinned versions); never
+  edited by hand. `static/style.css` only adds to them.
 - `tests/fixtures/`: made-up statements in the exact format of real exports
 
 ## Rules
@@ -48,6 +51,10 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
 - Personal rules (e.g. payments to a broker are transfers to an own investment account, who a
   transfer went to) go in user settings or the database, not in code. Transfer rules store the
   target account's name, so they work for any Firefly user with an account of that name.
+- Look: like Firefly III, by using the same MIT building blocks (AdminLTE, Bootstrap, Bootstrap
+  Icons) and Firefly's blue (#1e6581). Check pages in headless Edge screenshots (light and dark);
+  long native `<select>` lists drew badly in Edge's dark mode, hence Tom Select. Never copy Firefly's own code, templates, CSS or logo: they're
+  AGPL-3.0 and this project is MIT.
 - Amounts are `Decimal`, signed: negative = money out, fees included.
 - Revolut EUR/HUF transactions are converted to CHF (ECB rate of the day) and booked into one
   CHF Firefly account; the original amount goes into Firefly's foreign-amount field. Balances

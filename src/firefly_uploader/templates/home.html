@@ -1,56 +1,88 @@
 {% extends "base.html" %}
 {% block title %}Firefly connections{% endblock %}
+{% block heading %}Firefly connections{% endblock %}
 {% block main %}
-<h1>Firefly connections</h1>
 {% if connections %}
-  <p class="summary">The Firefly users you send statements to. The default one opens right after you log in.</p>
-  <table class="rows connections">
-    <tbody>
-    {% for c in connections %}
-      <tr>
-        <td><a href="/c/{{ c.id }}"><strong>{{ c.firefly_user }}</strong></a> <span class="small">on {{ c.host }}</span></td>
-        <td>
-          <form action="/connections/{{ c.id }}/default" method="post">
-            <input type="hidden" name="csrf" value="{{ session.csrf }}">
-            {% if c.is_default %}
-              <span class="badge">default</span>
-              <button class="link" name="is_default" value="0">no default</button>
-            {% else %}
-              <button class="link" name="is_default" value="1">make default</button>
-            {% endif %}
-          </form>
-        </td>
-        <td>
-          <form action="/connections/{{ c.id }}/remove" method="post" onsubmit="return confirm(this.dataset.question)"
-                data-question="Remove {{ c.firefly_user }} on {{ c.host }}? Its token is deleted from the uploader; Firefly isn't changed.">
-            <input type="hidden" name="csrf" value="{{ session.csrf }}">
-            <button class="link bad">remove</button>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-{% else %}
-  <p>Add the Firefly user you want to send statements to.</p>
+  <div class="card mb-4">
+    <div class="card-header">
+      <h3 class="card-title">Firefly users you send statements to</h3>
+    </div>
+    <div class="card-body p-0 table-responsive">
+      <table class="table table-hover align-middle mb-0 connections">
+        <tbody>
+        {% for c in connections %}
+          <tr>
+            <td>
+              <a href="/c/{{ c.id }}" class="fw-semibold">{{ c.firefly_user }}</a>
+              <div class="small text-body-secondary">{{ c.host }}</div>
+            </td>
+            <td>
+              {% if c.is_default %}
+                <span class="badge text-bg-primary"><i class="bi bi-star-fill me-1"></i>Default</span>
+                <div class="small text-body-secondary mt-1">Opens right after logging in</div>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex flex-wrap gap-1 justify-content-end">
+              <a href="/c/{{ c.id }}" class="btn btn-sm btn-primary"><i class="bi bi-upload me-1"></i>Open</a>
+              <form class="d-inline" action="/connections/{{ c.id }}/default" method="post">
+                <input type="hidden" name="csrf" value="{{ session.csrf }}">
+                {% if c.is_default %}
+                  <button class="btn btn-sm btn-outline-secondary" name="is_default" value="0">
+                    <i class="bi bi-star me-1"></i>Unset default
+                  </button>
+                {% else %}
+                  <button class="btn btn-sm btn-outline-secondary" name="is_default" value="1">
+                    <i class="bi bi-star-fill me-1"></i>Make default
+                  </button>
+                {% endif %}
+              </form>
+              <form class="d-inline" action="/connections/{{ c.id }}/remove" method="post"
+                    onsubmit="return confirm(this.dataset.question)"
+                    data-question="Remove {{ c.firefly_user }} on {{ c.host }}? Its token is deleted from the uploader; Firefly isn't changed.">
+                <input type="hidden" name="csrf" value="{{ session.csrf }}">
+                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Remove</button>
+              </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 {% endif %}
 
-<details class="add"{{ " open" if not connections or error }}>
-  <summary>{{ "Add another Firefly user" if connections else "Add a Firefly user" }}</summary>
-  {% if error %}<p class="message error">{{ error }}</p>{% endif %}
-  <form class="stacked" action="/connections" method="post">
-    <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <label>Firefly address
-      <input name="url" value="{{ url or '' }}" placeholder="https://firefly.example.com" required>
-      <span class="small">Without http:// or https:// in front, https is used.</span>
-    </label>
-    <label>Access token
-      <textarea name="token" rows="3" required autocomplete="off" spellcheck="false"></textarea>
-      <span class="small">In Firefly, logged in as that user: Options → Profile → OAuth → Personal Access Tokens → Create new token.
-      Adding the same user again replaces its token.</span>
-    </label>
-    <label class="checkbox"><input type="checkbox" name="make_default" value="1"{{ " checked" if not connections }}> Open this one right after logging in</label>
-    <button>Check and add</button>
+<div class="card card-primary card-outline add-connection">
+  <div class="card-header">
+    <h3 class="card-title">{{ "Add another Firefly user" if connections else "Add the Firefly user you want to send statements to" }}</h3>
+  </div>
+  <form action="/connections" method="post">
+    <div class="card-body">
+      {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      <div class="mb-3">
+        <label class="form-label" for="url">Firefly address</label>
+        <input class="form-control" id="url" name="url" value="{{ url or '' }}" placeholder="https://firefly.example.com" required>
+        <div class="form-text">Without http:// or https:// in front, https is used.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="token">Access token</label>
+        <textarea class="form-control font-monospace token" id="token" name="token" rows="3" required
+                  autocomplete="off" spellcheck="false"></textarea>
+        <div class="form-text">
+          In Firefly, logged in as that user: Options → Profile → OAuth → Personal Access Tokens → Create new token.
+          Adding the same user again replaces its token.
+        </div>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="make_default" name="make_default" value="1"{{ " checked" if not connections }}>
+        <label class="form-check-label" for="make_default">Open this one right after logging in</label>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button class="btn btn-primary"><i class="bi bi-plug me-1"></i>Check and add</button>
+    </div>
   </form>
-</details>
+</div>
 {% endblock %}

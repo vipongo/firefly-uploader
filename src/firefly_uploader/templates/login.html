@@ -1,12 +1,20 @@
-{% extends "base.html" %}
+{% extends "auth.html" %}
 {% block title %}Log in{% endblock %}
 {% block main %}
-<h1>Log in</h1>
-{% if error %}<p class="message error">{{ error }}</p>{% endif %}
-<form class="stacked" action="/login" method="post">
+<p class="login-box-msg">Log in to send statements to Firefly</p>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<form action="/login" method="post">
   <input type="hidden" name="next" value="{{ next }}">
-  <label>Username <input name="username" value="{{ username or '' }}" autocomplete="username" required autofocus></label>
-  <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
-  <button>Log in</button>
+  <div class="input-group mb-3">
+    <input class="form-control" name="username" value="{{ username or '' }}" placeholder="Username" aria-label="Username"
+           autocomplete="username" required autofocus>
+    <div class="input-group-text"><i class="bi bi-person"></i></div>
+  </div>
+  <div class="input-group mb-3">
+    <input class="form-control" type="password" name="password" placeholder="Password" aria-label="Password"
+           autocomplete="current-password" required>
+    <div class="input-group-text"><i class="bi bi-lock"></i></div>
+  </div>
+  <div class="d-grid"><button class="btn btn-primary">Log in</button></div>
 </form>
 {% endblock %}

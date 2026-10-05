@@ -130,6 +130,8 @@ def create_app(
     uploads: dict[str, Upload] = {}  # in memory: gone when the app restarts
 
     def render(request: Request, name: str, status_code: int = 200, **context) -> HTMLResponse:
+        if session := context.get("session"):  # the menu lists the user's Firefly connections
+            context.setdefault("nav_connections", store.connections(session.user_id))
         return templates.TemplateResponse(request, name, context, status_code=status_code)
 
     def logged_in(request: Request) -> Session | None:
@@ -252,8 +254,7 @@ def create_app(
                 request, "login.html", 401,
                 error="Wrong username or password.", username=username, next=local_path(next) or "",
             )
-        default = store.default_connection(user_id)
-        return log_in(request, user_id, local_path(next) or (f"/c/{default}" if default else "/"))
+        return log_in(request, user_id, local_path(next) or "/")
 
     @app.post("/logout")
     def logout(request: Request, csrf: str = Form(""), session: Session = Depends(current_session)):
@@ -265,9 +266,17 @@ def create_app(
 
     # Firefly connections
 
-    @app.get("/", response_class=HTMLResponse)
-    def home(request: Request, session: Session = Depends(current_session)):
-        return render(request, "home.html", session=session, connections=store.connections(session.user_id))
+    @app.get("/")
+    def start(session: Session = Depends(current_session)) -> RedirectResponse:
+        """Opening the app (or logging in) goes to the default connection, if there is one."""
+        default = store.default_connection(session.user_id)
+        return RedirectResponse(f"/c/{default}" if default else "/connections", status_code=303)
+
+    @app.get("/connections", response_class=HTMLResponse)
+    def connections_page(request: Request, session: Session = Depends(current_session)):
+        return render(
+            request, "home.html", page="home", session=session, connections=store.connections(session.user_id),
+        )
 
     @app.post("/connections")
     def add_connection(
@@ -286,7 +295,7 @@ def create_app(
                 status = status_of(firefly)
         except (ValueError, FireflyError) as error:
             return render(
-                request, "home.html", 400,
+                request, "home.html", 400, page="home",
                 session=session, connections=store.connections(session.user_id), error=str(error), url=url,
             )
         connection_id = store.save_connection(session.user_id, firefly_url, status.user, token)
@@ -301,13 +310,13 @@ def create_app(
     ):
         check_form(session, csrf)
         store.set_default(session.user_id, connection_id, is_default)
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/connections", status_code=303)
 
     @app.post("/connections/{connection_id}/remove")
     def remove_connection(connection_id: int, csrf: str = Form(""), session: Session = Depends(current_session)):
         check_form(session, csrf)
         store.remove_connection(session.user_id, connection_id)
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/connections", status_code=303)
 
     # Uploading and reviewing a statement for one connection
 

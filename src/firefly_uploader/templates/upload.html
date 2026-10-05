@@ -1,11 +1,19 @@
 {% extends "base.html" %}
+{% block title %}Upload a statement{% endblock %}
+{% block heading %}Upload a statement{% endblock %}
 {% block main %}
-<h1>Upload a statement</h1>
-<p>A CSV export from UBS or Revolut. Nothing goes to Firefly until you confirm on the next page.</p>
-{% if error %}<p class="message error">{{ error }}</p>{% endif %}
-<form class="upload" action="/c/{{ connection.id }}/upload" method="post" enctype="multipart/form-data">
-  <input type="hidden" name="csrf" value="{{ session.csrf }}">
-  <input type="file" name="statement_file" accept=".csv,text/csv" required>
-  <button>Read statement</button>
-</form>
+<div class="card card-primary card-outline upload-card">
+  <form action="/c/{{ connection.id }}/upload" method="post" enctype="multipart/form-data">
+    <div class="card-body">
+      {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      <label class="form-label" for="statement_file">Statement</label>
+      <input class="form-control" type="file" id="statement_file" name="statement_file" accept=".csv,text/csv" required>
+      <div class="form-text">A CSV export from UBS or Revolut. Nothing goes to Firefly until you confirm on the next page.</div>
+    </div>
+    <div class="card-footer">
+      <button class="btn btn-primary"><i class="bi bi-file-earmark-arrow-up me-1"></i>Read statement</button>
+    </div>
+  </form>
+</div>
 {% endblock %}

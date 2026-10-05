@@ -1,13 +1,24 @@
-{% extends "base.html" %}
+{% extends "auth.html" %}
 {% block title %}Welcome{% endblock %}
 {% block main %}
-<h1>Welcome</h1>
-<p>Create the user you'll log in with. Next, you'll add the Firefly users you send statements to.</p>
-{% if error %}<p class="message error">{{ error }}</p>{% endif %}
-<form class="stacked" action="/setup" method="post">
-  <label>Username <input name="username" value="{{ username or '' }}" autocomplete="username" required autofocus></label>
-  <label>Password <input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
-  <label>Password again <input type="password" name="password_again" autocomplete="new-password" minlength="8" required></label>
-  <button>Create user</button>
+<p class="login-box-msg">Create the user you'll log in with. Next, you'll add the Firefly users you send statements to.</p>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<form action="/setup" method="post">
+  <div class="input-group mb-3">
+    <input class="form-control" name="username" value="{{ username or '' }}" placeholder="Username" aria-label="Username"
+           autocomplete="username" required autofocus>
+    <div class="input-group-text"><i class="bi bi-person"></i></div>
+  </div>
+  <div class="input-group mb-3">
+    <input class="form-control" type="password" name="password" placeholder="Password (at least 8 characters)"
+           aria-label="Password" autocomplete="new-password" minlength="8" required>
+    <div class="input-group-text"><i class="bi bi-lock"></i></div>
+  </div>
+  <div class="input-group mb-3">
+    <input class="form-control" type="password" name="password_again" placeholder="Password again"
+           aria-label="Password again" autocomplete="new-password" minlength="8" required>
+    <div class="input-group-text"><i class="bi bi-lock"></i></div>
+  </div>
+  <div class="d-grid"><button class="btn btn-primary">Create user</button></div>
 </form>
 {% endblock %}

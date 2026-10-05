@@ -1,100 +1,129 @@
 {% extends "base.html" %}
 {% block title %}Review {{ upload.filename }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/vendor/tom-select/css/tom-select.bootstrap5.min.css">{% endblock %}
+{% block heading %}{{ upload.filename }}{% endblock %}
 {% block main %}
-<h1>{{ upload.filename }}</h1>
-<p class="summary">
-  {{ statement.bank|upper }} {{ statement.account }} · {{ rows|length }} transactions
-  from {{ rows|map(attribute="tx.date")|min }} to {{ rows|map(attribute="tx.date")|max }}
-  {% if rows[0].conversion %}
-    · converted from {{ statement.currency }} to {{ account.currency }} at the European Central Bank's rate of each day
-  {% endif %}
-</p>
-{% for warning in statement.warnings %}<p class="message warning">{{ warning }}</p>{% endfor %}
+{% for warning in statement.warnings %}
+  <div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>{{ warning }}</div>
+{% endfor %}
 
-<form class="account" method="get">
-  <label>Firefly account
-    <select name="account" onchange="this.form.submit()">
-      {% if not account %}<option value="">Choose…</option>{% endif %}
-      {% for a in accounts %}
-        <option value="{{ a.id }}"{{ " selected" if account and a.id == account.id }}>{{ a.name }} ({{ a.currency }})</option>
-      {% endfor %}
-    </select>
-  </label>
-  <noscript><button>Switch</button></noscript>
-</form>
-{% if problem %}<p class="message error">{{ problem }}</p>{% endif %}
+<div class="card mb-3">
+  <div class="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+    <div class="summary">
+      <i class="bi bi-bank me-1"></i>{{ statement.bank|upper }} {{ statement.account }}
+      · {{ rows|length }} transactions
+      from {{ rows|map(attribute="tx.date")|min }} to {{ rows|map(attribute="tx.date")|max }}
+      {% if rows[0].conversion %}
+        <div class="small text-body-secondary">
+          <i class="bi bi-currency-exchange me-1"></i>converted from {{ statement.currency }} to {{ account.currency }}
+          at the European Central Bank's rate of each day
+        </div>
+      {% endif %}
+    </div>
+    <form class="d-flex align-items-center gap-2" method="get">
+      <label class="text-nowrap" for="account">Firefly account</label>
+      <select class="form-select" id="account" name="account" onchange="this.form.submit()">
+        {% if not account %}<option value="">Choose…</option>{% endif %}
+        {% for a in accounts %}
+          <option value="{{ a.id }}"{{ " selected" if account and a.id == account.id }}>{{ a.name }} ({{ a.currency }})</option>
+        {% endfor %}
+      </select>
+      <noscript><button class="btn btn-outline-secondary">Switch</button></noscript>
+    </form>
+  </div>
+</div>
+{% if problem %}<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>{{ problem }}</div>{% endif %}
 
 <form method="post">
   <input type="hidden" name="csrf" value="{{ session.csrf }}">
   <input type="hidden" name="account" value="{{ account.id if account else '' }}">
-  <table class="rows">
-    <thead>
-      <tr><th>Send</th><th>Date</th><th>Merchant or person</th><th class="amount">Amount</th><th>Category or transfer</th><th>Next time</th></tr>
-    </thead>
-    <tbody>
-    {% for row in rows %}
-      {% set n = loop.index0 %}
-      {% set key = row.tx.counterparty|merchant_key %}
-      <tr{{ ' class="in-firefly"'|safe if row.in_firefly }}>
-        <td><input type="checkbox" name="include" value="{{ n }}"{{ " checked" if row.include }} aria-label="Send to Firefly"></td>
-        <td class="date">{{ row.tx.date }}</td>
-        <td>
-          <input class="name" name="name_{{ n }}" value="{{ row.counterparty }}" list="names"
-                 data-original="{{ row.tx.counterparty }}" aria-label="Merchant or person" title="Click to change">
-          {% if row.tx.description != row.tx.counterparty %}
-            <div class="small">{{ row.tx.description }}</div>
-          {% else %}
-            <div class="small original" hidden>In the statement: {{ row.tx.counterparty }}</div>
-          {% endif %}
-          {% if row.tx.method %}<div class="small">{{ row.tx.method }}</div>{% endif %}
-          {% if row.in_firefly %}
-            <div class="note">
-              {% if row.same_id %}Already uploaded{% else %}Maybe already in Firefly: {{ row.in_firefly.date }} “{{ row.in_firefly.description }}” {{ row.in_firefly.amount|money }}{% endif %}
-              · <a href="{{ firefly.url }}/transactions/show/{{ row.in_firefly.id }}" target="_blank" rel="noopener">open</a>
-            </div>
-          {% endif %}
-        </td>
-        <td class="amount {{ 'out' if row.amount < 0 else 'in' }}">
-          {{ row.amount|money }}&nbsp;{{ row.conversion.currency if row.conversion else row.tx.currency }}
-          {% if row.conversion %}
-            <div class="small">{{ row.tx.amount|money }}&nbsp;{{ row.tx.currency }} at {{ row.conversion.rate|rate }}{% if row.conversion.rate_date != row.tx.date %} ({{ row.conversion.rate_date }}){% endif %}</div>
-          {% endif %}
-        </td>
-        <td>
-          <select name="category_{{ n }}" data-sync="category" data-key="{{ key }}" aria-label="Category or transfer">
-            <option value="">(none)</option>
-            <optgroup label="Categories">
-              {% for category in categories %}
-                <option{{ " selected" if category == row.choice }}>{{ category }}</option>
-              {% endfor %}
-            </optgroup>
-            {% if own_accounts %}
-              <optgroup label="Transfer to or from own account">
-                {% for a in own_accounts %}
-                  <option value="transfer:{{ a.id }}"{{ " selected" if row.choice == "transfer:" ~ a.id }}>{{ a.name }}</option>
-                {% endfor %}
-              </optgroup>
-            {% endif %}
-          </select>
-          <div class="small remembered"{{ " hidden" if not row.from_rule }}>remembered</div>
-        </td>
-        <td>
-          <select name="remember_{{ n }}" data-sync="remember" data-key="{{ key }}" aria-label="Next time">
-            <option value="remember"{{ " selected" if row.remember == "remember" }}>Remember</option>
-            <option value="once"{{ " selected" if row.remember == "once" }}>Only this time</option>
-            <option value="always_ask"{{ " selected" if row.remember == "always_ask" }}>Always ask</option>
-          </select>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="card">
+    <div class="card-body p-0 table-responsive">
+      <table class="table table-hover mb-0 rows">
+        <thead>
+          <tr>
+            <th class="ps-3">Send</th><th>Date</th><th>Merchant or person</th><th class="text-end">Amount</th>
+            <th>Category or transfer</th><th>Next time</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in rows %}
+          {% set n = loop.index0 %}
+          {% set key = row.tx.counterparty|merchant_key %}
+          <tr{{ ' class="in-firefly"'|safe if row.in_firefly }}>
+            <td class="ps-3">
+              <input class="form-check-input" type="checkbox" name="include" value="{{ n }}"{{ " checked" if row.include }} aria-label="Send to Firefly">
+            </td>
+            <td class="text-nowrap">{{ row.tx.date }}</td>
+            <td class="merchant">
+              <input class="name" name="name_{{ n }}" value="{{ row.counterparty }}" list="names"
+                     data-original="{{ row.tx.counterparty }}" aria-label="Merchant or person" title="Click to change">
+              {% if row.tx.description != row.tx.counterparty %}
+                <div class="small text-body-secondary">{{ row.tx.description }}</div>
+              {% else %}
+                <div class="small text-body-secondary original" hidden>In the statement: {{ row.tx.counterparty }}</div>
+              {% endif %}
+              {% if row.tx.method %}<div class="small text-body-secondary">{{ row.tx.method }}</div>{% endif %}
+              {% if row.in_firefly %}
+                <div class="small mt-1">
+                  {% if row.same_id %}
+                    <span class="badge text-bg-secondary"><i class="bi bi-check2-all me-1"></i>Already uploaded</span>
+                  {% else %}
+                    <span class="badge text-bg-warning"><i class="bi bi-question-circle me-1"></i>Maybe already in Firefly</span>
+                  {% endif %}
+                  <a href="{{ firefly.url }}/transactions/show/{{ row.in_firefly.id }}" target="_blank" rel="noopener">open <i class="bi bi-box-arrow-up-right"></i></a>
+                  {% if not row.same_id %}
+                    <div class="text-body-secondary">{{ row.in_firefly.date }} · {{ row.in_firefly.description }} · {{ row.in_firefly.amount|money }}</div>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </td>
+            <td class="text-end text-nowrap amount {{ 'text-danger' if row.amount < 0 else 'text-success' }}">
+              {{ row.amount|money }}&nbsp;{{ row.conversion.currency if row.conversion else row.tx.currency }}
+              {% if row.conversion %}
+                <div class="small text-body-secondary">{{ row.tx.amount|money }}&nbsp;{{ row.tx.currency }} at {{ row.conversion.rate|rate }}{% if row.conversion.rate_date != row.tx.date %} ({{ row.conversion.rate_date }}){% endif %}</div>
+              {% endif %}
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="category_{{ n }}" data-sync="category" data-key="{{ key }}" aria-label="Category or transfer">
+                <option value="">(none)</option>
+                <optgroup label="Categories">
+                  {% for category in categories %}
+                    <option{{ " selected" if category == row.choice }}>{{ category }}</option>
+                  {% endfor %}
+                </optgroup>
+                {% if own_accounts %}
+                  <optgroup label="Transfer to or from own account">
+                    {% for a in own_accounts %}
+                      <option value="transfer:{{ a.id }}"{{ " selected" if row.choice == "transfer:" ~ a.id }}>{{ a.name }}</option>
+                    {% endfor %}
+                  </optgroup>
+                {% endif %}
+              </select>
+              <div class="small text-body-secondary remembered"{{ " hidden" if not row.from_rule }}><i class="bi bi-bookmark-check me-1"></i>remembered</div>
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="remember_{{ n }}" data-sync="remember" data-key="{{ key }}" aria-label="Next time">
+                <option value="remember"{{ " selected" if row.remember == "remember" }}>Remember</option>
+                <option value="once"{{ " selected" if row.remember == "once" }}>Only this time</option>
+                <option value="always_ask"{{ " selected" if row.remember == "always_ask" }}>Always ask</option>
+              </select>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer d-flex flex-wrap gap-3 align-items-center">
+      <button class="btn btn-primary" id="send"{{ " disabled data-blocked" if problem }}>Send to Firefly</button>
+      <span class="small text-body-secondary">Unticked rows are left out. Ticked rows already in Firefly are refused by Firefly if they are exact copies.</span>
+    </div>
+  </div>
   <datalist id="names">{% for name in names %}<option value="{{ name }}">{% endfor %}</datalist>
-  <p class="actions">
-    <button id="send"{{ " disabled data-blocked" if problem }}>Send to Firefly</button>
-    <span class="small">Unticked rows are left out. Ticked rows already in Firefly are refused by Firefly if they are exact copies.</span>
-  </p>
 </form>
+{% endblock %}
+{% block scripts %}
 <script id="rules" type="application/json">{{ rules|tojson }}</script>
+<script src="/static/vendor/tom-select/js/tom-select.complete.min.js"></script>
 <script src="/static/review.js"></script>
 {% endblock %}

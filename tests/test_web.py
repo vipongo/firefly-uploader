@@ -136,7 +136,14 @@ def send(browser, review_url: str, form: dict) -> httpx.Response:
 
 
 def rows_of(html: str) -> list[str]:
-    return re.findall(r"<tr(?: class=\"[^\"]*\")?>\s*<td>.*?</tr>", html, re.DOTALL)
+    """The rows of the page's (one) table of transactions."""
+    body = re.search(r"<tbody>(.*?)</tbody>", html, re.DOTALL)[1]
+    return re.findall(r"<tr\b.*?</tr>", body, re.DOTALL)
+
+
+def counts_of(html: str) -> dict[str, int]:
+    """The result page's counts: created, duplicate, failed, skipped."""
+    return {kind: int(n) for kind, n in re.findall(r'data-count="(\w+)">(\d+)<', html)}
 
 
 def test_shows_which_firefly_user_is_used(browser):
@@ -170,7 +177,7 @@ def test_send_creates_transactions_and_remembers(browser, firefly, store):
     result = send(browser, review_url, form)
 
     assert result.status_code == 200
-    assert "2 created" in result.text and "6 left out" in result.text
+    assert counts_of(result.text) == {"created": 2, "duplicate": 0, "failed": 0, "skipped": 6}
     assert [(s["source_id"], s["destination_name"], s.get("category_name")) for s in firefly.created] == [
         ("12", "SBB EASYRIDE", "Public Transport"), ("12", "MUSTER BAECKEREI AG", "Groceries"),
     ]
@@ -186,7 +193,7 @@ def test_second_review_marks_rows_already_uploaded_and_suggests_category(browser
     rows = rows_of(browser.get(review_url).text)
 
     assert "Already uploaded" in rows[0] and 'value="0" checked' not in rows[0]
-    assert 'class="small remembered">' in rows[4]  # another SBB ride
+    assert 'remembered"><i' in rows[4]  # another SBB ride
     assert "<option selected>Public Transport</option>" in rows[4]
 
 
@@ -197,7 +204,7 @@ def test_sending_twice_is_refused_by_firefly(browser, firefly):
 
     result = send(browser, review_url, form)
 
-    assert "0 created · 1 already in Firefly" in result.text
+    assert counts_of(result.text) | {"skipped": 0} == {"created": 0, "duplicate": 1, "failed": 0, "skipped": 0}
     assert len(firefly.created) == 1
 
 
@@ -226,7 +233,7 @@ def test_no_rates_no_sending(firefly, store):
     response = upload(browser, REVOLUT_EUR, "revolut.csv")
 
     assert "Couldn&#39;t get EUR to CHF exchange rates" in response.text
-    assert '<button id="send" disabled data-blocked>' in response.text
+    assert 'id="send" disabled data-blocked>' in response.text
     assert send(browser, str(response.url), {"account": "16", "include": ["0"]}).status_code == 502
     assert firefly.created == []
 
@@ -247,7 +254,7 @@ def test_transfer_to_own_account_is_offered_and_remembered(browser, firefly, sto
     assert store.rules(APP_USER) == {"example broker ltd.": Rule(transfer_account="Broker")}
     row = rows_of(browser.get(review_url).text)[broker_row]
     assert '<option value="transfer:17" selected>Broker</option>' in row
-    assert 'class="small remembered">' in row
+    assert 'remembered"><i' in row
 
 
 def test_switching_account(browser):
@@ -311,9 +318,9 @@ def test_setup_then_add_the_first_connection(app, store):
     home = browser.post("/setup", data={"username": "alice", "password": "a long password",
                                         "password_again": "a long password"})
 
-    assert home.url.path == "/"
+    assert home.url.path == "/connections"
     assert "Add the Firefly user you want to send statements to" in home.text
-    assert "<details class=\"add\" open>" in home.text
+    assert 'name="make_default" value="1" checked>' in home.text  # the first one becomes the default
     assert TestClient(app).get("/setup").url.path == "/login"  # only once
 
 
@@ -360,8 +367,8 @@ def test_login_without_default_shows_the_connections(app, store):
 
     response = TestClient(app).post("/login", data={"username": "alice", "password": "a long password"})
 
-    assert response.url.path == "/"
-    assert "test@example.com</strong></a> <span class=\"small\">on firefly.example</span>" in response.text
+    assert response.url.path == "/connections"
+    assert '<a href="/c/1" class="fw-semibold">test@example.com</a>' in response.text
 
 
 def test_login_returns_to_the_page_asked_for(app):
@@ -385,11 +392,17 @@ def test_login_never_sends_elsewhere(app):
     assert response.url.path == CONNECTION
 
 
+def test_opening_the_app_while_logged_in_goes_to_the_default(browser, store):
+    assert browser.get("/").url.path == CONNECTION
+    store.set_default(APP_USER, 1, is_default=False)
+    assert browser.get("/").url.path == "/connections"
+
+
 def test_default_can_be_changed(browser, store):
     browser.post("/connections/1/default", data={"csrf": browser.csrf, "is_default": "0"})
 
     assert store.default_connection(APP_USER) is None
-    assert "make default" in browser.get("/").text
+    assert "Make default" in browser.get("/connections").text
 
 
 def test_forms_without_the_session_token_are_refused(browser, firefly):

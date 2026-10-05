@@ -26,7 +26,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-firefly_uploader = ["templates/*.html", "static/*"]
+firefly_uploader = ["templates/*.html", "static/*", "static/vendor/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

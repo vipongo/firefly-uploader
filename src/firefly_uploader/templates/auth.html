@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{# Pages before logging in: a centred box, no menu #}
+{% block body %}
+<body class="login-page bg-body-secondary">
+<div class="login-box">
+  <div class="login-logo">
+    <i class="bi bi-cloud-arrow-up-fill text-primary"></i> <b>Firefly</b> uploader
+  </div>
+  <div class="card">
+    <div class="card-body login-card-body">
+      {% block main %}{% endblock %}
+    </div>
+  </div>
+</div>
+</body>
+{% endblock %}

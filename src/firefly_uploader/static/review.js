@@ -5,6 +5,24 @@ const merchantKey = (name) => name.toLowerCase().split(/\s+/).filter(Boolean).jo
 
 const selectOf = (tr, kind) => tr.querySelector(`select[data-sync="${kind}"]`);
 
+// The category list is drawn by Tom Select, which can be typed in to filter. (Edge drew the
+// browser's own long list with blank space at the bottom.)
+for (const select of document.querySelectorAll('select[data-sync="category"]')) {
+  new TomSelect(select, {
+    plugins: ["dropdown_input"], // the search field sits at the top of the open list
+    allowEmptyOption: true,
+    maxOptions: null, // all of them, not just the first 50
+    dropdownParent: "body", // not cut off by the table, not faded with an unticked row
+    lockOptgroupOrder: true,
+  });
+}
+
+// Changes the value without a change event, so filling in other rows doesn't cascade.
+function setChoice(select, value) {
+  if (select.tomselect) select.tomselect.setValue(value, true);
+  else select.value = value;
+}
+
 // Choosing a category (or "next time") on one row fills in the other rows of the same
 // merchant, unless those were changed by hand. Categories aren't copied to "always ask"
 // rows: one name can stand for different people there (e.g. "Revolut Bank UAB").
@@ -16,7 +34,7 @@ for (const select of document.querySelectorAll("select[data-sync]")) {
       const alwaysAsk = selectOf(tr, "remember").value === "always_ask";
       if (other.dataset.key !== select.dataset.key || other.dataset.touched) continue;
       if (select.dataset.sync === "category" && alwaysAsk) continue;
-      other.value = select.value;
+      setChoice(other, select.value);
     }
   });
 }
@@ -30,8 +48,8 @@ for (const input of document.querySelectorAll("input.name")) {
     const remember = selectOf(tr, "remember");
     const rule = rules[key];
     category.dataset.key = remember.dataset.key = key;
-    if (!category.dataset.touched) category.value = rule?.choice ?? "";
-    if (!remember.dataset.touched) remember.value = rule?.always_ask ? "always_ask" : "remember";
+    if (!category.dataset.touched) setChoice(category, rule?.choice ?? "");
+    if (!remember.dataset.touched) setChoice(remember, rule?.always_ask ? "always_ask" : "remember");
     tr.querySelector(".remembered").hidden = !(rule?.choice && category.value === rule.choice);
     const original = tr.querySelector(".original");
     if (original) original.hidden = key === merchantKey(input.dataset.original);
