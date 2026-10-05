@@ -3,7 +3,8 @@
 <h1>Upload a statement</h1>
 <p>A CSV export from UBS or Revolut. Nothing goes to Firefly until you confirm on the next page.</p>
 {% if error %}<p class="message error">{{ error }}</p>{% endif %}
-<form class="upload" action="/upload" method="post" enctype="multipart/form-data">
+<form class="upload" action="/c/{{ connection.id }}/upload" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
   <input type="file" name="statement_file" accept=".csv,text/csv" required>
   <button>Read statement</button>
 </form>

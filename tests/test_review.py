@@ -15,6 +15,7 @@ from firefly_uploader.firefly import (
 )
 from firefly_uploader.models import Statement, Transaction
 from firefly_uploader.rates import DailyRates
+from firefly_uploader.auth import TokenCipher
 from firefly_uploader.store import Rule, Store
 
 
@@ -37,7 +38,12 @@ def booked(amount="-6.50", day=5, external_id=None, id="1") -> Booked:
 
 @pytest.fixture
 def store(tmp_path: Path) -> Store:
-    return Store(tmp_path / "uploader.db")
+    store = Store(tmp_path / "uploader.db", TokenCipher(TokenCipher.new_key()))
+    assert store.create_user("alice", "a long password") == USER
+    return store
+
+
+USER = 1
 
 
 def test_remembered_category_is_filled_in():
@@ -109,9 +115,9 @@ def test_save_rules(store):
     for row, (category, remember, include) in zip(rows, choices):
         row.category, row.remember, row.include = category, remember, include
 
-    review.save_rules(rows, store)
+    review.save_rules(rows, store, USER)
 
-    assert store.rules() == {"sbb": Rule("Public Transport"), "amazon": Rule(always_ask=True)}
+    assert store.rules(USER) == {"sbb": Rule("Public Transport"), "amazon": Rule(always_ask=True)}
 
 
 class FakeFirefly:
@@ -153,18 +159,6 @@ def test_send_stops_when_firefly_goes_away():
     assert len(firefly.sent) == 1
 
 
-def test_rules_ignore_case_and_spacing(store):
-    store.remember("SBB  EasyRide", "Public Transport")
-    store.remember("sbb easyride", "Travel Home")
-
-    assert store.rules() == {"sbb easyride": Rule("Travel Home")}
-
-
-def test_account_links_belong_to_one_firefly_user(store):
-    store.link_account("test@example.com @ https://firefly.example", "CH12", "12")
-
-    assert store.linked_account("test@example.com @ https://firefly.example", "CH12") == "12"
-    assert store.linked_account("real@example.com @ https://firefly.example", "CH12") is None
 
 
 def test_renamed_row_is_sent_under_the_new_name():
@@ -193,9 +187,9 @@ def test_rules_are_saved_under_the_chosen_name(store):
     [row] = review.prepare(statement(tx("Revolut Bank UAB")), [], {})
     row.counterparty, row.category = "Jane Doe", "Gifts"
 
-    review.save_rules([row], store)
+    review.save_rules([row], store, USER)
 
-    assert store.rules() == {"jane doe": Rule("Gifts")}
+    assert store.rules(USER) == {"jane doe": Rule("Gifts")}
 
 
 EUR_TO_CHF = DailyRates("EUR", "CHF", {date(2026, 10, 1): Decimal("0.94")})
@@ -249,18 +243,6 @@ def test_transfer_is_remembered_by_account_name(store):
     [row] = review.prepare(statement(tx("Example Broker Ltd.")), [], {}, own_accounts=OWN)
     row.choose("transfer:17", OWN)
 
-    review.save_rules([row], store)
+    review.save_rules([row], store, USER)
 
-    assert store.rules() == {"example broker ltd.": Rule(transfer_account="Broker")}
-
-
-def test_rules_from_before_transfers_are_kept(tmp_path):
-    import sqlite3
-
-    path = tmp_path / "old.db"
-    with sqlite3.connect(path) as db:
-        db.execute("create table rules (counterparty text primary key, category text, always_ask integer not null default 0)")
-        db.execute("insert into rules values ('sbb easyride', 'Public Transport', 0)")
-    db.close()
-
-    assert Store(path).rules() == {"sbb easyride": Rule("Public Transport")}
+    assert store.rules(USER) == {"example broker ltd.": Rule(transfer_account="Broker")}

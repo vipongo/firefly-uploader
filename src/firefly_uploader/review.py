@@ -169,16 +169,16 @@ def _same_money(row: Row, booked: Booked) -> bool:
     return (booked.amount < 0) == (row.amount < 0) and abs(booked.amount - row.amount) <= abs(row.amount) * RATE_TOLERANCE
 
 
-def save_rules(rows: list[Row], store: Store) -> None:
+def save_rules(rows: list[Row], store: Store, user_id: int) -> None:
     for row in rows:
         if not row.include:
             continue
         if row.remember == ALWAYS_ASK:
-            store.always_ask(row.counterparty)
+            store.always_ask(user_id, row.counterparty)
         elif row.remember == REMEMBER and row.transfer_with:
-            store.remember_transfer(row.counterparty, row.transfer_with.name)
+            store.remember_transfer(user_id, row.counterparty, row.transfer_with.name)
         elif row.remember == REMEMBER and row.category:
-            store.remember(row.counterparty, row.category)
+            store.remember(user_id, row.counterparty, row.category)
 
 
 def send(rows: list[Row], account_id: str, firefly: FireflyClient) -> list[Outcome]:

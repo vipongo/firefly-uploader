@@ -46,6 +46,8 @@ header {
 }
 
 .brand { font-weight: 600; color: var(--text); text-decoration: none; }
+header nav { margin-left: auto; display: flex; gap: 1rem; align-items: baseline; font-size: 0.9em; }
+header nav form { display: inline; }
 .connection { color: var(--muted); font-size: 0.9em; }
 .connection strong { color: var(--text); }
 .bad { color: var(--out); }
@@ -67,6 +69,22 @@ select, button, input[type="file"] { font: inherit; }
 select { padding: 0.2rem; max-width: 14rem; color: var(--text); background: var(--background); border: 1px solid var(--line); border-radius: 4px; }
 button { padding: 0.45rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
 button:disabled { opacity: 0.5; cursor: default; }
+button.link { padding: 0; background: none; color: var(--accent); text-decoration: underline; font-size: inherit; }
+button.link.bad { color: var(--out); }
+.badge { font-size: 0.8em; padding: 0.1rem 0.45rem; border-radius: 999px; background: var(--header); border: 1px solid var(--line); margin-right: 0.5rem; }
+
+.stacked { display: grid; gap: 0.9rem; max-width: 30rem; margin-top: 1rem; }
+.stacked label { display: grid; gap: 0.3rem; }
+.stacked label.checkbox { display: flex; gap: 0.5rem; align-items: center; }
+.stacked input:not([type="checkbox"]), .stacked textarea {
+  font: inherit; padding: 0.4rem 0.5rem; color: var(--text); background: var(--background);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+.stacked textarea { font-family: ui-monospace, monospace; font-size: 0.85em; word-break: break-all; }
+.stacked button { justify-self: start; }
+details.add { margin-top: 1.5rem; }
+details.add summary { cursor: pointer; color: var(--accent); }
+.connections td { vertical-align: middle; }
 
 .rows { width: 100%; border-collapse: collapse; }
 .rows th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.85em; }

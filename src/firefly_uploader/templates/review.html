@@ -25,6 +25,7 @@
 {% if problem %}<p class="message error">{{ problem }}</p>{% endif %}
 
 <form method="post">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
   <input type="hidden" name="account" value="{{ account.id if account else '' }}">
   <table class="rows">
     <thead>
@@ -49,7 +50,7 @@
           {% if row.in_firefly %}
             <div class="note">
               {% if row.same_id %}Already uploaded{% else %}Maybe already in Firefly: {{ row.in_firefly.date }} “{{ row.in_firefly.description }}” {{ row.in_firefly.amount|money }}{% endif %}
-              · <a href="{{ connection.url }}/transactions/show/{{ row.in_firefly.id }}" target="_blank" rel="noopener">open</a>
+              · <a href="{{ firefly.url }}/transactions/show/{{ row.in_firefly.id }}" target="_blank" rel="noopener">open</a>
             </div>
           {% endif %}
         </td>

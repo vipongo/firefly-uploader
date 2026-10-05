@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+{% block main %}
+<h1>Log in</h1>
+{% if error %}<p class="message error">{{ error }}</p>{% endif %}
+<form class="stacked" action="/login" method="post">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label>Username <input name="username" value="{{ username or '' }}" autocomplete="username" required autofocus></label>
+  <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+  <button>Log in</button>
+</form>
+{% endblock %}

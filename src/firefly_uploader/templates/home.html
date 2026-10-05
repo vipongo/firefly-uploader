@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Firefly connections{% endblock %}
+{% block main %}
+<h1>Firefly connections</h1>
+{% if connections %}
+  <p class="summary">The Firefly users you send statements to. The default one opens right after you log in.</p>
+  <table class="rows connections">
+    <tbody>
+    {% for c in connections %}
+      <tr>
+        <td><a href="/c/{{ c.id }}"><strong>{{ c.firefly_user }}</strong></a> <span class="small">on {{ c.host }}</span></td>
+        <td>
+          <form action="/connections/{{ c.id }}/default" method="post">
+            <input type="hidden" name="csrf" value="{{ session.csrf }}">
+            {% if c.is_default %}
+              <span class="badge">default</span>
+              <button class="link" name="is_default" value="0">no default</button>
+            {% else %}
+              <button class="link" name="is_default" value="1">make default</button>
+            {% endif %}
+          </form>
+        </td>
+        <td>
+          <form action="/connections/{{ c.id }}/remove" method="post" onsubmit="return confirm(this.dataset.question)"
+                data-question="Remove {{ c.firefly_user }} on {{ c.host }}? Its token is deleted from the uploader; Firefly isn't changed.">
+            <input type="hidden" name="csrf" value="{{ session.csrf }}">
+            <button class="link bad">remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>Add the Firefly user you want to send statements to.</p>
+{% endif %}
+
+<details class="add"{{ " open" if not connections or error }}>
+  <summary>{{ "Add another Firefly user" if connections else "Add a Firefly user" }}</summary>
+  {% if error %}<p class="message error">{{ error }}</p>{% endif %}
+  <form class="stacked" action="/connections" method="post">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label>Firefly address
+      <input name="url" value="{{ url or '' }}" placeholder="https://firefly.example.com" required>
+      <span class="small">Without http:// or https:// in front, https is used.</span>
+    </label>
+    <label>Access token
+      <textarea name="token" rows="3" required autocomplete="off" spellcheck="false"></textarea>
+      <span class="small">In Firefly, logged in as that user: Options → Profile → OAuth → Personal Access Tokens → Create new token.
+      Adding the same user again replaces its token.</span>
+    </label>
+    <label class="checkbox"><input type="checkbox" name="make_default" value="1"{{ " checked" if not connections }}> Open this one right after logging in</label>
+    <button>Check and add</button>
+  </form>
+</details>
+{% endblock %}

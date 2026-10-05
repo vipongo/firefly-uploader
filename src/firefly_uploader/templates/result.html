@@ -14,7 +14,7 @@
     <tr class="{{ outcome.status }}">
       <td>
         {% if outcome.status == "created" %}
-          <a href="{{ connection.url }}/transactions/show/{{ outcome.firefly_id }}" target="_blank" rel="noopener">created</a>
+          <a href="{{ firefly.url }}/transactions/show/{{ outcome.firefly_id }}" target="_blank" rel="noopener">created</a>
         {% elif outcome.status == "duplicate" %}already in Firefly
         {% elif outcome.status == "failed" %}<span class="bad">failed</span>
         {% else %}left out{% endif %}
@@ -36,5 +36,5 @@
   {% endfor %}
   </tbody>
 </table>
-<p class="actions"><a href="/review/{{ upload_id }}">Back to the review</a> · <a href="/">Upload another statement</a></p>
+<p class="actions"><a href="/c/{{ connection.id }}/review/{{ upload_id }}">Back to the review</a> · <a href="/c/{{ connection.id }}">Upload another statement</a></p>
 {% endblock %}

@@ -1,7 +1,8 @@
 # Firefly uploader
 
 Web app that reads bank statements (UBS, Revolut) and sends the transactions to the user's
-self-hosted Firefly III (v6.7.7; URL in `.env`) through its API. Python, src layout.
+self-hosted Firefly III (v6.7.7) through its API. Python, src layout. The app has its own login;
+each app user adds the Firefly users ("connections": URL + token) they send statements to.
 Runs on the user's Windows PC during development; will later be hosted on TrueNAS (Docker).
 
 ## Commands
@@ -12,9 +13,11 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
   `docker compose -f dev/firefly-test/compose.yml up -d`, then `.venv\Scripts\python dev\firefly-test\setup.py`
   (creates the user, writes `FIREFLY_TEST_*` to `.env`, CHF + "UBS"/"Revolut" accounts).
   Reset with `down -v` and run setup again. Ports 7439-8298 are reserved by Windows on this PC.
-- Run the web app: `.venv\Scripts\python -m firefly_uploader serve [--test]` → http://127.0.0.1:8765
-  (remembered answers in `uploader.db`, or `UPLOADER_DB`)
-- Check a connection (read-only): `.venv\Scripts\python -m firefly_uploader check [--test]`
+- Run the web app: `.venv\Scripts\python -m firefly_uploader serve` → http://127.0.0.1:8765
+  (data in `uploader.db` or `UPLOADER_DB`; tokens encrypted with `UPLOADER_SECRET_KEY` or the
+  `secret.key` file made next to the database). First start asks for a user.
+- Forgotten password: `.venv\Scripts\python -m firefly_uploader set-password USERNAME`
+- Check `FIREFLY_*` / `FIREFLY_TEST_*` from `.env` (read-only): `... -m firefly_uploader check [--test]`
 
 ## Layout
 
@@ -27,9 +30,13 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
   already in Firefly?) and sending
 - `src/firefly_uploader/rates.py`: ECB daily rates from frankfurter.dev (asked against EUR, other
   pairs divided out for precision; weekends use the last business day)
-- `src/firefly_uploader/store.py`: SQLite: category rules per merchant, statement → Firefly account
-  links (per Firefly user, since account IDs differ between users)
-- `src/firefly_uploader/web.py` + `templates/` + `static/`: FastAPI app, server-rendered forms
+- `src/firefly_uploader/store.py`: SQLite: users, sessions, Firefly connections, category rules
+  per merchant (per app user), statement → Firefly account links (per Firefly user, since account
+  IDs differ between users). Schema changes = a new function appended to `MIGRATIONS`, never an
+  edit of an old one: databases upgrade themselves on start.
+- `src/firefly_uploader/auth.py`: scrypt passwords, session secrets, token encryption (Fernet)
+- `src/firefly_uploader/web.py` + `templates/` + `static/`: FastAPI app, server-rendered forms.
+  Every POST form carries `csrf` (the session's token) and is checked with `check_form()`.
 - `tests/fixtures/`: made-up statements in the exact format of real exports
 
 ## Rules
@@ -45,11 +52,12 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
 - Revolut EUR/HUF transactions are converted to CHF (ECB rate of the day) and booked into one
   CHF Firefly account; the original amount goes into Firefly's foreign-amount field. Balances
   needn't match exactly. Generally: whenever statement and account currency differ.
-- Firefly users: `.env` currently holds a token for a separate test user on the real instance, which
-  has no real data; uploads during development go there. Writing as the real user (by swapping the
-  token) needs the user's explicit OK. Automated tests only use the local throwaway instance.
-  `check` prints which user a token belongs to; the web app must show it too.
-- The Firefly token goes in `.env` (gitignored), never in code or chat. See `.env.example`.
+- Firefly users: during development the user sends statements to a separate test user on the real
+  instance, which has no real data. Writing as their real Firefly user needs the user's explicit
+  OK. Automated tests only use the local throwaway instance or fakes. Pages of a connection show
+  which Firefly user it is.
+- Firefly tokens never go in code or chat: in the app they're entered in the browser and stored
+  encrypted; for `check` they're in `.env` (gitignored). `secret.key` and `*.db` are gitignored.
 - Duplicates: every split carries the bank's `external_id`; the review marks rows whose
   `external_id` (or amount within a few days) is already `booked()` in Firefly.
   Firefly also rejects exact copies (`DuplicateTransactionError`) as a safety net.

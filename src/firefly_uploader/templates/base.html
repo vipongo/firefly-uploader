@@ -8,13 +8,22 @@
 </head>
 <body>
 <header>
-  <a class="brand" href="/">Firefly uploader</a>
-  {% if connection %}
-    {% if connection.error %}
-      <span class="connection bad">Firefly at {{ connection.host }}: {{ connection.error }}</span>
+  <a class="brand" href="{{ '/c/' ~ connection.id if connection else '/' }}">Firefly uploader</a>
+  {% if firefly %}
+    {% if firefly.error %}
+      <span class="connection bad">Firefly at {{ firefly.host }}: {{ firefly.error }}</span>
     {% else %}
-      <span class="connection">Firefly {{ connection.version }} at {{ connection.host }} as <strong>{{ connection.user }}</strong></span>
+      <span class="connection">Firefly {{ firefly.version }} at {{ firefly.host }} as <strong>{{ firefly.user }}</strong></span>
     {% endif %}
+  {% endif %}
+  {% if session %}
+    <nav>
+      <a href="/">Firefly connections</a>
+      <form action="/logout" method="post">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <button class="link" title="Logged in as {{ session.username }}">Log out {{ session.username }}</button>
+      </form>
+    </nav>
   {% endif %}
 </header>
 <main>

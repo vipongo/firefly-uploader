@@ -10,6 +10,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from firefly_uploader.auth import TokenCipher
 from firefly_uploader.firefly import FireflyClient
 from firefly_uploader.rates import DailyRates, RatesError
 from firefly_uploader.store import Rule, Store
@@ -19,6 +20,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 UBS = (FIXTURES / "ubs_sample.csv").read_bytes()
 REVOLUT_EUR = (FIXTURES / "revolut_eur_sample.csv").read_bytes()
 USER = "test@example.com @ https://firefly.example"
+APP_USER = 1  # the first user, made by logged_in()
+CONNECTION = "/c/1"
+TOKEN = "good-token"
 
 
 def page(items) -> dict:
@@ -37,10 +41,12 @@ class FakeFirefly:
         self.groups: dict[str, list[dict]] = {}  # per account
         self.created: list[dict] = []
 
-    def connect(self) -> FireflyClient:
-        return FireflyClient(self.url, "token", transport=httpx.MockTransport(self.handle))
+    def connect(self, url: str, token: str) -> FireflyClient:
+        return FireflyClient(url, token, transport=httpx.MockTransport(self.handle))
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        if request.headers["Authorization"] != f"Bearer {TOKEN}":
+            return httpx.Response(401, json={"message": "Unauthenticated."})
         path = request.url.path.removeprefix("/api/v1")
         if path == "/about":
             return httpx.Response(200, json={"data": {"version": "6.7.7"}})
@@ -88,20 +94,45 @@ def firefly() -> FakeFirefly:
 
 @pytest.fixture
 def store(tmp_path) -> Store:
-    return Store(tmp_path / "uploader.db")
+    return Store(tmp_path / "uploader.db", TokenCipher(TokenCipher.new_key()))
 
 
 def fake_rates(source, target, start, end) -> DailyRates:
     return DailyRates(source, target, {date(2026, 8, 31): Decimal("0.94")})
 
 
+def csrf_of(html: str) -> str:
+    return re.search(r'name="csrf" value="([^"]+)"', html)[1]
+
+
+def logged_in(app) -> TestClient:
+    """A browser that created the first user and added the fake Firefly as default connection."""
+    browser = TestClient(app)
+    home = browser.post("/setup", data={"username": "alice", "password": "a long password",
+                                        "password_again": "a long password"})
+    browser.csrf = csrf_of(home.text)
+    browser.post("/connections", data={"csrf": browser.csrf, "url": FakeFirefly.url, "token": TOKEN,
+                                       "make_default": "1"})
+    return browser
+
+
 @pytest.fixture
-def browser(firefly, store) -> TestClient:
-    return TestClient(create_app(firefly.connect, store, rates=fake_rates))
+def app(firefly, store):
+    return create_app(store, connect=firefly.connect, rates=fake_rates)
+
+
+@pytest.fixture
+def browser(app) -> TestClient:
+    return logged_in(app)
 
 
 def upload(browser, data=UBS, filename="ubs.csv") -> httpx.Response:
-    return browser.post("/upload", files={"statement_file": (filename, data, "text/csv")})
+    return browser.post(f"{CONNECTION}/upload", data={"csrf": browser.csrf},
+                        files={"statement_file": (filename, data, "text/csv")})
+
+
+def send(browser, review_url: str, form: dict) -> httpx.Response:
+    return browser.post(review_url, data={"csrf": browser.csrf, **form})
 
 
 def rows_of(html: str) -> list[str]:
@@ -109,7 +140,7 @@ def rows_of(html: str) -> list[str]:
 
 
 def test_shows_which_firefly_user_is_used(browser):
-    html = browser.get("/").text
+    html = browser.get(CONNECTION).text
 
     assert "Firefly 6.7.7 at firefly.example as <strong>test@example.com</strong>" in html
 
@@ -136,21 +167,21 @@ def test_send_creates_transactions_and_remembers(browser, firefly, store):
             "category_0": "Public Transport", "remember_0": "remember",
             "category_2": "Groceries", "remember_2": "once"}
 
-    result = browser.post(review_url, data=form)
+    result = send(browser, review_url, form)
 
     assert result.status_code == 200
     assert "2 created" in result.text and "6 left out" in result.text
     assert [(s["source_id"], s["destination_name"], s.get("category_name")) for s in firefly.created] == [
         ("12", "SBB EASYRIDE", "Public Transport"), ("12", "MUSTER BAECKEREI AG", "Groceries"),
     ]
-    assert store.rules() == {"sbb easyride": Rule("Public Transport")}
+    assert store.rules(APP_USER) == {"sbb easyride": Rule("Public Transport")}
     assert store.linked_account(USER, "CH1234567890123456789") == "12"
 
 
 def test_second_review_marks_rows_already_uploaded_and_suggests_category(browser, firefly):
     review_url = str(upload(browser).url)
-    browser.post(review_url, data={"account": "12", "include": ["0"],
-                                   "category_0": "Public Transport", "remember_0": "remember"})
+    send(browser, review_url, {"account": "12", "include": ["0"],
+                               "category_0": "Public Transport", "remember_0": "remember"})
 
     rows = rows_of(browser.get(review_url).text)
 
@@ -162,9 +193,9 @@ def test_second_review_marks_rows_already_uploaded_and_suggests_category(browser
 def test_sending_twice_is_refused_by_firefly(browser, firefly):
     review_url = str(upload(browser).url)
     form = {"account": "12", "include": ["0"], "remember_0": "once"}
-    browser.post(review_url, data=form)
+    send(browser, review_url, form)
 
-    result = browser.post(review_url, data=form)
+    result = send(browser, review_url, form)
 
     assert "0 created · 1 already in Firefly" in result.text
     assert len(firefly.created) == 1
@@ -179,7 +210,7 @@ def test_foreign_currency_is_converted(browser, firefly):
     assert "-37.60&nbsp;CHF" in rows_of(response.text)[0]  # -40.00 EUR at 0.94
     assert "-40.00&nbsp;EUR at 0.94 (2026-08-31)" in rows_of(response.text)[0]
 
-    browser.post(review_url, data={"account": "16", "include": ["0"], "remember_0": "once"})
+    send(browser, review_url, {"account": "16", "include": ["0"], "remember_0": "once"})
 
     [split] = firefly.created
     assert (split["amount"], split["currency_code"]) == ("37.60", "CHF")
@@ -191,12 +222,12 @@ def test_no_rates_no_sending(firefly, store):
     def no_rates(*args):
         raise RatesError("Couldn't get EUR to CHF exchange rates from frankfurter.dev: offline")
 
-    browser = TestClient(create_app(firefly.connect, store, rates=no_rates))
+    browser = logged_in(create_app(store, connect=firefly.connect, rates=no_rates))
     response = upload(browser, REVOLUT_EUR, "revolut.csv")
 
     assert "Couldn&#39;t get EUR to CHF exchange rates" in response.text
     assert '<button id="send" disabled data-blocked>' in response.text
-    assert browser.post(str(response.url), data={"account": "16", "include": ["0"]}).status_code == 502
+    assert send(browser, str(response.url), {"account": "16", "include": ["0"]}).status_code == 502
     assert firefly.created == []
 
 
@@ -208,12 +239,12 @@ def test_transfer_to_own_account_is_offered_and_remembered(browser, firefly, sto
     assert '<option value="transfer:17">Broker</option>' in rows_of(response.text)[broker_row]
     assert '<option value="transfer:12">' not in response.text  # not the statement's own account
 
-    browser.post(review_url, data={"account": "12", "include": [str(broker_row)],
-                                   f"category_{broker_row}": "transfer:17", f"remember_{broker_row}": "remember"})
+    send(browser, review_url, {"account": "12", "include": [str(broker_row)],
+                               f"category_{broker_row}": "transfer:17", f"remember_{broker_row}": "remember"})
 
     [split] = firefly.created
     assert (split["type"], split["source_id"], split["destination_id"], split["amount"]) == ("transfer", "12", "17", "500.00")
-    assert store.rules() == {"example broker ltd.": Rule(transfer_account="Broker")}
+    assert store.rules(APP_USER) == {"example broker ltd.": Rule(transfer_account="Broker")}
     row = rows_of(browser.get(review_url).text)[broker_row]
     assert '<option value="transfer:17" selected>Broker</option>' in row
     assert 'class="small remembered">' in row
@@ -228,7 +259,7 @@ def test_switching_account(browser):
 
 
 def test_forgotten_upload(browser):
-    response = browser.get("/review/" + "0" * 32)
+    response = browser.get(f"{CONNECTION}/review/" + "0" * 32)
 
     assert response.status_code == 404
     assert "upload the file again" in response.text
@@ -246,9 +277,166 @@ def test_name_can_be_changed(browser, firefly, store):
     form = {"account": "12", "include": ["2"], "name_2": "  Muster   Bakery ",
             "category_2": "Groceries", "remember_2": "remember"}
 
-    browser.post(review_url, data=form)
+    send(browser, review_url, form)
 
     [split] = firefly.created
     assert (split["destination_name"], split["description"]) == ("Muster Bakery", "Muster Bakery")
     assert split["notes"].startswith("Name in the statement: MUSTER BAECKEREI AG")
-    assert store.rules() == {"muster bakery": Rule("Groceries")}
+    assert store.rules(APP_USER) == {"muster bakery": Rule("Groceries")}
+
+
+# Logging in and Firefly connections
+
+
+def test_first_start_asks_for_a_user(app):
+    browser = TestClient(app)
+
+    response = browser.get("/c/1")
+
+    assert response.url.path == "/setup"
+    assert "Create the user you'll log in with" in response.text
+
+
+def test_setup_checks_the_password(app, store):
+    response = TestClient(app).post("/setup", data={"username": "alice", "password": "short", "password_again": "short"})
+
+    assert response.status_code == 400
+    assert "at least 8 characters" in response.text
+    assert not store.has_users()
+
+
+def test_setup_then_add_the_first_connection(app, store):
+    browser = TestClient(app)
+
+    home = browser.post("/setup", data={"username": "alice", "password": "a long password",
+                                        "password_again": "a long password"})
+
+    assert home.url.path == "/"
+    assert "Add the Firefly user you want to send statements to" in home.text
+    assert "<details class=\"add\" open>" in home.text
+    assert TestClient(app).get("/setup").url.path == "/login"  # only once
+
+
+def test_adding_a_connection_checks_the_token(app, store):
+    browser = logged_in(app)
+
+    response = browser.post("/connections", data={"csrf": browser.csrf, "url": FakeFirefly.url, "token": "wrong"})
+
+    assert response.status_code == 400
+    assert "Firefly rejected the access token" in response.text
+    assert len(store.connections(APP_USER)) == 1  # only the one logged_in() added
+
+
+def test_adding_a_connection_cleans_up_the_address(app, store):
+    browser = TestClient(app)
+    home = browser.post("/setup", data={"username": "alice", "password": "a long password",
+                                        "password_again": "a long password"})
+
+    response = browser.post("/connections", data={"csrf": csrf_of(home.text), "url": " firefly.example/api/v1/ ",
+                                                  "token": f" {TOKEN}\n"})
+
+    assert response.url.path == "/c/1"
+    [connection] = store.connections(APP_USER)
+    assert (connection.url, connection.firefly_user, connection.is_default) == (
+        "https://firefly.example", "test@example.com", False,
+    )
+    assert store.connection(APP_USER, 1).token == TOKEN
+
+
+def test_login_opens_the_default_connection(app):
+    logged_in(app)
+    browser = TestClient(app)
+
+    wrong = browser.post("/login", data={"username": "alice", "password": "not it"})
+    right = browser.post("/login", data={"username": "alice", "password": "a long password"})
+
+    assert wrong.status_code == 401 and "Wrong username or password" in wrong.text
+    assert right.url.path == CONNECTION
+
+
+def test_login_without_default_shows_the_connections(app, store):
+    logged_in(app)
+    store.set_default(APP_USER, 1, is_default=False)
+
+    response = TestClient(app).post("/login", data={"username": "alice", "password": "a long password"})
+
+    assert response.url.path == "/"
+    assert "test@example.com</strong></a> <span class=\"small\">on firefly.example</span>" in response.text
+
+
+def test_login_returns_to_the_page_asked_for(app):
+    logged_in(app)
+    browser = TestClient(app)
+
+    login_page = browser.get("/c/1/review/abc")
+    response = browser.post("/login", data={"username": "alice", "password": "a long password",
+                                            "next": "/c/1/review/abc"})
+
+    assert login_page.url.path == "/login" and 'value="/c/1/review/abc"' in login_page.text
+    assert response.url.path == "/c/1/review/abc"
+
+
+def test_login_never_sends_elsewhere(app):
+    logged_in(app)
+
+    response = TestClient(app).post("/login", data={"username": "alice", "password": "a long password",
+                                                    "next": "//evil.example"})
+
+    assert response.url.path == CONNECTION
+
+
+def test_default_can_be_changed(browser, store):
+    browser.post("/connections/1/default", data={"csrf": browser.csrf, "is_default": "0"})
+
+    assert store.default_connection(APP_USER) is None
+    assert "make default" in browser.get("/").text
+
+
+def test_forms_without_the_session_token_are_refused(browser, firefly):
+    response = browser.post("/connections/1/remove", data={"csrf": "forged"})
+
+    assert response.status_code == 403
+    assert browser.get(CONNECTION).status_code == 200  # still there
+
+
+def test_remove_connection(browser, store):
+    browser.post("/connections/1/remove", data={"csrf": browser.csrf})
+
+    assert store.connections(APP_USER) == []
+    assert browser.get(CONNECTION).status_code == 404
+
+
+def test_logout(browser):
+    browser.post("/logout", data={"csrf": browser.csrf})
+
+    assert browser.get(CONNECTION).url.path == "/login"
+
+
+def test_connections_of_other_users_are_hidden(app, store):
+    logged_in(app)
+    store.create_user("bob", "another password")
+    bob = TestClient(app)
+    bob.post("/login", data={"username": "bob", "password": "another password"})
+
+    assert bob.get(CONNECTION).status_code == 404
+
+
+def logged_in_as_alice(app) -> TestClient:
+    browser = TestClient(app)
+    browser.post("/login", data={"username": "alice", "password": "a long password"})
+    return browser
+
+
+def test_unreadable_token_says_what_to_do(app, store, firefly):
+    logged_in(app)
+    other_key = Store(store.path, TokenCipher(TokenCipher.new_key()))
+    browser = logged_in_as_alice(create_app(other_key, connect=firefly.connect, rates=fake_rates))
+
+    response = browser.get(CONNECTION)
+
+    assert response.status_code == 409
+    assert "the app&#39;s secret key changed" in response.text
+
+
+def test_health_check_needs_no_login(app):
+    assert TestClient(app).get("/healthz").text == "ok"

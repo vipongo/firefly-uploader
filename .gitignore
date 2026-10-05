@@ -12,3 +12,6 @@ __pycache__/
 
 # Local app data
 *.db
+
+# Key that encrypts the Firefly tokens in the database
+*.key

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Welcome{% endblock %}
+{% block main %}
+<h1>Welcome</h1>
+<p>Create the user you'll log in with. Next, you'll add the Firefly users you send statements to.</p>
+{% if error %}<p class="message error">{{ error }}</p>{% endif %}
+<form class="stacked" action="/setup" method="post">
+  <label>Username <input name="username" value="{{ username or '' }}" autocomplete="username" required autofocus></label>
+  <label>Password <input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+  <label>Password again <input type="password" name="password_again" autocomplete="new-password" minlength="8" required></label>
+  <button>Create user</button>
+</form>
+{% endblock %}
