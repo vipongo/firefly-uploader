@@ -18,6 +18,9 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
   `secret.key` file made next to the database). First start asks for a user.
 - Forgotten password: `.venv\Scripts\python -m firefly_uploader set-password USERNAME`
 - Check `FIREFLY_*` / `FIREFLY_TEST_*` from `.env` (read-only): `... -m firefly_uploader check [--test]`
+- Docker image: `docker build -t firefly-uploader .` (data in the `/data` volume, runs as uid 568).
+  Every push to main runs the tests on GitHub Actions and publishes `ghcr.io/vipongo/firefly-uploader:latest`
+  (and `:sha-<commit>`); the user deploys it with Komodo on TrueNAS, using `deploy/compose.yml`.
 
 ## Layout
 

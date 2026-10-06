@@ -1,0 +1,7 @@
+# Only what the image needs, so statements, .env, databases and keys can never end up in it
+*
+!pyproject.toml
+!LICENSE
+!src/
+**/__pycache__
+**/*.egg-info
