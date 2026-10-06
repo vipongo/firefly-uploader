@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from fastapi import Depends, FastAPI, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
@@ -21,7 +21,7 @@ from .firefly import Account, FireflyClient, FireflyError
 from .models import Statement
 from .parsers import parse
 from .rates import DailyRates, RatesError, fetch_rates
-from .store import SESSION_DAYS, Connection, Rule, Session, Store, counterparty_key
+from .store import MAX_NAME_LENGTH, SESSION_DAYS, Connection, Rule, Session, Store, clean_name, counterparty_key
 
 HERE = Path(__file__).parent
 KEEP_UPLOADS = 20
@@ -39,6 +39,7 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["money"] = money
 templates.env.filters["merchant_key"] = counterparty_key
 templates.env.filters["rate"] = lambda rate: f"{rate:.6g}"  # 0.9424, 0.00258891
+templates.env.globals["max_name_length"] = MAX_NAME_LENGTH
 
 
 class PageError(Exception):
@@ -129,10 +130,10 @@ def create_app(
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     uploads: dict[str, Upload] = {}  # in memory: gone when the app restarts
 
-    def render(request: Request, name: str, status_code: int = 200, **context) -> HTMLResponse:
+    def render(request: Request, template: str, status_code: int = 200, **context) -> HTMLResponse:
         if session := context.get("session"):  # the menu lists the user's Firefly connections
             context.setdefault("nav_connections", store.connections(session.user_id))
-        return templates.TemplateResponse(request, name, context, status_code=status_code)
+        return templates.TemplateResponse(request, template, context, status_code=status_code)
 
     def logged_in(request: Request) -> Session | None:
         secret = request.cookies.get(SESSION_COOKIE)
@@ -282,6 +283,7 @@ def create_app(
     def add_connection(
         request: Request,
         csrf: str = Form(""),
+        name: str = Form(""),
         url: str = Form(""),
         token: str = Form(""),
         make_default: bool = Form(False),
@@ -295,13 +297,30 @@ def create_app(
                 status = status_of(firefly)
         except (ValueError, FireflyError) as error:
             return render(
-                request, "home.html", 400, page="home",
-                session=session, connections=store.connections(session.user_id), error=str(error), url=url,
+                request, "home.html", 400, page="home", session=session,
+                connections=store.connections(session.user_id), error=str(error), name=name, url=url,
             )
-        connection_id = store.save_connection(session.user_id, firefly_url, status.user, token)
+        connection_id = store.save_connection(session.user_id, firefly_url, status.user, token, clean_name(name))
         if make_default:
             store.set_default(session.user_id, connection_id)
         return RedirectResponse(f"/c/{connection_id}", status_code=303)
+
+    @app.post("/connections/order")
+    def order_connections(
+        csrf: str = Form(""), order: list[int] = Form([]), session: Session = Depends(current_session),
+    ) -> Response:
+        """Sent by the page's script when a connection is dragged elsewhere."""
+        check_form(session, csrf)
+        store.order_connections(session.user_id, order)
+        return Response(status_code=204)
+
+    @app.post("/connections/{connection_id}/name")
+    def rename_connection(
+        connection_id: int, csrf: str = Form(""), name: str = Form(""), session: Session = Depends(current_session),
+    ):
+        check_form(session, csrf)
+        store.rename_connection(session.user_id, connection_id, clean_name(name))
+        return RedirectResponse("/connections", status_code=303)
 
     @app.post("/connections/{connection_id}/default")
     def set_default(

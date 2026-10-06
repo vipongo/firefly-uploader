@@ -350,6 +350,45 @@ def test_adding_a_connection_cleans_up_the_address(app, store):
     assert store.connection(APP_USER, 1).token == TOKEN
 
 
+def test_connection_with_a_name(browser, store):
+    browser.post("/connections", data={"csrf": browser.csrf, "url": "other.example", "token": TOKEN,
+                                       "name": "  Test   user "})
+
+    html = browser.get("/connections").text
+
+    assert store.connection(APP_USER, 2).name == "Test user"
+    assert '<a href="/c/2" class="fw-semibold">Test user</a>' in html
+    assert "test@example.com · other.example" in html  # which Firefly user it is
+    assert '<p class="connection-link">Test user<small>other.example</small></p>' in html  # menu
+    assert "as <strong>test@example.com</strong>" in browser.get("/c/2").text
+
+
+def test_rename_connection(browser, store):
+    browser.post("/connections/1/name", data={"csrf": browser.csrf, "name": "Test"})
+    assert '<a href="/c/1" class="fw-semibold">Test</a>' in browser.get("/connections").text
+
+    browser.post("/connections/1/name", data={"csrf": browser.csrf, "name": " "})
+    assert store.connection(APP_USER, 1).label == "test@example.com"
+
+    refused = browser.post("/connections/1/name", data={"csrf": "forged", "name": "Forged"})
+    assert refused.status_code == 403 and store.connection(APP_USER, 1).name is None
+
+
+def test_reorder_connections(browser, store):
+    assert "drag-handle" not in browser.get("/connections").text  # nothing to reorder yet
+    browser.post("/connections", data={"csrf": browser.csrf, "url": "other.example", "token": TOKEN})
+
+    response = browser.post("/connections/order", data={"csrf": browser.csrf, "order": ["2", "1"]})
+
+    assert response.status_code == 204
+    assert [c.id for c in store.connections(APP_USER)] == [2, 1]
+    html = browser.get("/connections").text
+    assert html.index('data-connection="2"') < html.index('data-connection="1"')  # menu
+    assert 'class="btn btn-link drag-handle"' in html
+    refused = browser.post("/connections/order", data={"csrf": "forged", "order": ["1", "2"]})
+    assert refused.status_code == 403 and [c.id for c in store.connections(APP_USER)] == [2, 1]
+
+
 def test_login_opens_the_default_connection(app):
     logged_in(app)
     browser = TestClient(app)

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from firefly_uploader.auth import TokenCipher, hash_password, load_key, verify_password
-from firefly_uploader.store import EARLY_USER, MIGRATIONS, Rule, Store
+from firefly_uploader.store import EARLY_USER, MAX_NAME_LENGTH, MIGRATIONS, Rule, Store, clean_name
 
 KEY = TokenCipher.new_key()
 
@@ -98,9 +98,54 @@ def test_one_default_connection(store):
     store.set_default(user_id, real)
 
     assert store.default_connection(user_id) == real
-    assert [c.is_default for c in store.connections(user_id)] == [True, False]  # real, test
+    assert [c.is_default for c in store.connections(user_id)] == [False, True]  # test, real
     store.set_default(user_id, real, is_default=False)
     assert store.default_connection(user_id) is None
+
+
+def test_connection_names(store):
+    user_id = store.create_user("alice", "a long password")
+    connection_id = store.save_connection(user_id, "https://firefly.example", "me@example.com", "t1", "Test")
+
+    assert store.connection(user_id, connection_id).label == "Test"
+    store.save_connection(user_id, "https://firefly.example", "me@example.com", "t2")  # new token only
+    assert store.connection(user_id, connection_id).name == "Test"
+    store.save_connection(user_id, "https://firefly.example", "me@example.com", "t3", "Mine")
+    assert store.connection(user_id, connection_id).name == "Mine"
+    store.rename_connection(user_id, connection_id, None)
+    assert store.connection(user_id, connection_id).label == "me@example.com"
+
+
+def test_clean_name():
+    assert clean_name("  Test   user ") == "Test user"
+    assert clean_name("   ") is None
+    assert len(clean_name("x" * 100)) == MAX_NAME_LENGTH
+
+
+def test_connections_keep_the_users_order(store):
+    user_id = store.create_user("alice", "a long password")
+    first, second, third = (
+        store.save_connection(user_id, "https://firefly.example", f"{name}@example.com", "token")
+        for name in ("c", "b", "a")
+    )
+
+    assert [c.id for c in store.connections(user_id)] == [first, second, third]  # new ones go last
+    store.order_connections(user_id, [third, first, 999])  # unknown IDs are ignored
+    assert [c.id for c in store.connections(user_id)] == [third, first, second]  # unlisted ones go after
+    fourth = store.save_connection(user_id, "https://firefly.example", "d@example.com", "token")
+    assert [c.id for c in store.connections(user_id)] == [third, first, second, fourth]
+
+
+def test_connections_of_others_cant_be_renamed_or_moved(store):
+    alice = store.create_user("alice", "a long password")
+    bob = store.create_user("bob", "another password")
+    first = store.save_connection(alice, "https://firefly.example", "a@example.com", "token")
+    second = store.save_connection(alice, "https://firefly.example", "b@example.com", "token")
+
+    store.rename_connection(bob, first, "Mine")
+    store.order_connections(bob, [second, first])
+
+    assert [(c.id, c.name) for c in store.connections(alice)] == [(first, None), (second, None)]
 
 
 def test_connections_belong_to_their_user(store):
@@ -151,6 +196,33 @@ def test_database_from_before_users_is_upgraded(tmp_path):
     first = store.create_user("alice", "a long password")
     assert store.rules(first) == {"sbb easyride": Rule("Public Transport")}
     assert store.rules(store.create_user("bob", "another password")) == {}
+
+
+def test_connections_keep_their_order_when_upgraded(tmp_path):
+    path = tmp_path / "v2.db"
+    with closing(sqlite3.connect(path, isolation_level=None)) as db:  # as version 2 left it
+        for migrate in MIGRATIONS[:2]:
+            migrate(db)
+        db.execute("pragma user_version = 2")
+        db.execute("insert into users (id, username, password_hash) values (1, 'alice', 'x'), (2, 'bob', 'x')")
+        for user_id, url, firefly_user in [
+            (1, "https://b.example", "a@example.com"), (2, "https://a.example", "a@example.com"),
+            (1, "https://a.example", "z@example.com"), (1, "https://a.example", "b@example.com"),
+        ]:
+            db.execute(
+                "insert into connections (user_id, url, firefly_user, token) values (?, ?, ?, 'x')",
+                (user_id, url, firefly_user),
+            )
+
+    store = Store(path, TokenCipher(KEY))
+
+    assert [(c.url, c.firefly_user, c.name) for c in store.connections(1)] == [
+        ("https://a.example", "b@example.com", None),
+        ("https://a.example", "z@example.com", None),
+        ("https://b.example", "a@example.com", None),
+    ]
+    added = store.save_connection(1, "https://a.example", "a@example.com", "token")
+    assert store.connections(1)[-1].id == added
 
 
 def test_upgrading_twice_changes_nothing(tmp_path):

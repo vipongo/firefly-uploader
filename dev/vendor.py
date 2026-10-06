@@ -16,6 +16,7 @@ PACKAGES = {
     "bootstrap": ("5.3.8", ["dist/js/bootstrap.bundle.min.js"], "MIT"),
     "bootstrap-icons": ("1.13.1", ["font/bootstrap-icons.min.css", "font/fonts/bootstrap-icons.woff2"], "MIT"),
     "tom-select": ("2.6.2", ["dist/css/tom-select.bootstrap5.min.css", "dist/js/tom-select.complete.min.js"], "Apache-2.0"),
+    "sortablejs": ("1.15.7", ["Sortable.min.js"], "MIT"),
 }
 
 

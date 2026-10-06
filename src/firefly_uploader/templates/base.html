@@ -53,10 +53,10 @@
         <ul class="nav sidebar-menu flex-column" role="navigation">
           {% if nav_connections %}<li class="nav-header">SEND STATEMENTS TO</li>{% endif %}
           {% for c in nav_connections %}
-            <li class="nav-item">
+            <li class="nav-item" data-connection="{{ c.id }}">
               <a href="/c/{{ c.id }}" class="nav-link{{ ' active' if connection and c.id == connection.id }}">
                 <i class="nav-icon bi bi-{{ 'star-fill' if c.is_default else 'person' }}"></i>
-                <p class="connection-link">{{ c.firefly_user }}<small>{{ c.host }}</small></p>
+                <p class="connection-link">{{ c.label }}<small>{{ c.host }}</small></p>
               </a>
             </li>
           {% endfor %}

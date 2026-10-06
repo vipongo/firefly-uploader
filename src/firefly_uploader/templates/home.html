@@ -6,15 +6,36 @@
   <div class="card mb-4">
     <div class="card-header">
       <h3 class="card-title">Firefly users you send statements to</h3>
+      {% if connections|length > 1 %}
+        <div class="card-tools small text-body-secondary">Drag <i class="bi bi-grip-vertical"></i> to change the order</div>
+      {% endif %}
     </div>
     <div class="card-body p-0 table-responsive">
       <table class="table table-hover align-middle mb-0 connections">
-        <tbody>
+        <tbody data-csrf="{{ session.csrf }}">
         {% for c in connections %}
-          <tr>
+          <tr data-id="{{ c.id }}">
+            {% if connections|length > 1 %}
+              <td class="handle-cell">
+                <button type="button" class="btn btn-link drag-handle" title="Drag to change the order"
+                        aria-label="Move {{ c.label }} up or down with the arrow keys"><i class="bi bi-grip-vertical"></i></button>
+              </td>
+            {% endif %}
             <td>
-              <a href="/c/{{ c.id }}" class="fw-semibold">{{ c.firefly_user }}</a>
-              <div class="small text-body-secondary">{{ c.host }}</div>
+              <a href="/c/{{ c.id }}" class="fw-semibold">{{ c.label }}</a>
+              <button type="button" class="btn btn-link btn-sm p-0 ms-1 rename-toggle" title="Rename"
+                      aria-label="Rename {{ c.label }}" data-bs-toggle="collapse" data-bs-target="#rename-{{ c.id }}"
+                      aria-expanded="false" aria-controls="rename-{{ c.id }}"><i class="bi bi-pencil"></i></button>
+              <div class="small text-body-secondary">{% if c.name %}{{ c.firefly_user }} · {% endif %}{{ c.host }}</div>
+              <form class="collapse rename" id="rename-{{ c.id }}" action="/connections/{{ c.id }}/name" method="post">
+                <input type="hidden" name="csrf" value="{{ session.csrf }}">
+                <div class="input-group input-group-sm mt-2">
+                  <input class="form-control" name="name" value="{{ c.name or '' }}" placeholder="{{ c.firefly_user }}"
+                         maxlength="{{ max_name_length }}" autocomplete="off" aria-label="Name">
+                  <button class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save</button>
+                </div>
+                <div class="form-text">Leave it empty to show the Firefly user's email.</div>
+              </form>
             </td>
             <td>
               {% if c.is_default %}
@@ -39,7 +60,7 @@
               </form>
               <form class="d-inline" action="/connections/{{ c.id }}/remove" method="post"
                     onsubmit="return confirm(this.dataset.question)"
-                    data-question="Remove {{ c.firefly_user }} on {{ c.host }}? Its token is deleted from the uploader; Firefly isn't changed.">
+                    data-question="Remove {{ c.label }}{% if c.name %} ({{ c.firefly_user }}){% endif %} on {{ c.host }}? Its token is deleted from the uploader; Firefly isn't changed.">
                 <input type="hidden" name="csrf" value="{{ session.csrf }}">
                 <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Remove</button>
               </form>
@@ -71,9 +92,14 @@
         <textarea class="form-control font-monospace token" id="token" name="token" rows="3" required
                   autocomplete="off" spellcheck="false"></textarea>
         <div class="form-text">
-          In Firefly, logged in as that user: Options → Profile → OAuth → Personal Access Tokens → Create new token.
+          In Firefly, logged in as that user: Options → Remote access and tokens → Personal Access Tokens → Create new token.
           Adding the same user again replaces its token.
         </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="name">Name <span class="text-body-secondary">(optional)</span></label>
+        <input class="form-control" id="name" name="name" value="{{ name or '' }}" maxlength="{{ max_name_length }}" autocomplete="off">
+        <div class="form-text">Shown in the menu instead of the Firefly user's email, e.g. “Test”.</div>
       </div>
       <div class="form-check">
         <input class="form-check-input" type="checkbox" id="make_default" name="make_default" value="1"{{ " checked" if not connections }}>
@@ -85,4 +111,8 @@
     </div>
   </form>
 </div>
+{% endblock %}
+{% block scripts %}
+{% if connections|length > 1 %}<script src="/static/vendor/sortablejs/Sortable.min.js"></script>{% endif %}
+{% if connections %}<script src="/static/connections.js"></script>{% endif %}
 {% endblock %}

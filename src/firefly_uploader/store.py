@@ -17,6 +17,7 @@ from .auth import TokenCipher, fingerprint, hash_password, new_secret, verify_pa
 
 SESSION_DAYS = 30
 EARLY_USER = 0  # rules learned before the app had users; they go to the first user
+MAX_NAME_LENGTH = 60
 
 
 def _v1(db: sqlite3.Connection) -> None:
@@ -77,7 +78,20 @@ def _v2(db: sqlite3.Connection) -> None:
     """)
 
 
-MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [_v1, _v2]
+def _v3(db: sqlite3.Connection) -> None:
+    """Connections get a name of the user's choice and an order; existing ones keep the old order."""
+    _run(db, """
+        alter table connections add column name text;  -- null: the Firefly user's email is shown
+        alter table connections add column position integer not null default 0;
+        update connections set position = (
+            select count(*) from connections as earlier
+            where earlier.user_id = connections.user_id
+              and (earlier.url, earlier.firefly_user) < (connections.url, connections.firefly_user)
+        )
+    """)
+
+
+MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3]
 
 
 def _run(db: sqlite3.Connection, script: str) -> None:
@@ -108,8 +122,13 @@ class Connection:
     id: int
     url: str
     firefly_user: str
+    name: str | None = None
     is_default: bool = False
     token: str | None = None  # None when it can't be decrypted (the secret key changed)
+
+    @property
+    def label(self) -> str:
+        return self.name or self.firefly_user
 
     @property
     def host(self) -> str:
@@ -124,6 +143,11 @@ class Connection:
 def counterparty_key(name: str) -> str:
     """'SBB EASYRIDE' and 'SBB EasyRide' are the same merchant."""
     return " ".join(name.casefold().split())
+
+
+def clean_name(text: str) -> str | None:
+    """'  Test   user ' -> 'Test user'; empty -> None."""
+    return " ".join(text.split())[:MAX_NAME_LENGTH] or None
 
 
 def _now() -> str:
@@ -219,43 +243,65 @@ class Store:
     # Firefly connections
 
     def connections(self, user_id: int) -> list[Connection]:
-        """Without their tokens."""
+        """Without their tokens, in the user's order."""
         with self._db() as db:
             rows = db.execute(
-                "select id, url, firefly_user, is_default from connections where user_id = ?"
-                " order by url, firefly_user",
+                "select id, url, firefly_user, name, is_default from connections where user_id = ?"
+                " order by position, id",
                 (user_id,),
             ).fetchall()
-        return [Connection(id, url, user, bool(is_default)) for id, url, user, is_default in rows]
+        return [Connection(id, url, user, name, bool(is_default)) for id, url, user, name, is_default in rows]
 
     def connection(self, user_id: int, connection_id: int) -> Connection | None:
         with self._db() as db:
             row = db.execute(
-                "select id, url, firefly_user, is_default, token from connections where user_id = ? and id = ?",
+                "select id, url, firefly_user, name, is_default, token from connections where user_id = ? and id = ?",
                 (user_id, connection_id),
             ).fetchone()
         if row is None:
             return None
-        id, url, firefly_user, is_default, token = row
-        return Connection(id, url, firefly_user, bool(is_default), self._cipher.decrypt(token))
+        id, url, firefly_user, name, is_default, token = row
+        return Connection(id, url, firefly_user, name, bool(is_default), self._cipher.decrypt(token))
 
     def default_connection(self, user_id: int) -> int | None:
         with self._db() as db:
             row = db.execute("select id from connections where user_id = ? and is_default", (user_id,)).fetchone()
         return row[0] if row else None
 
-    def save_connection(self, user_id: int, url: str, firefly_user: str, token: str) -> int:
-        """Adding the same Firefly user again replaces the token (e.g. when it expired)."""
+    def save_connection(self, user_id: int, url: str, firefly_user: str, token: str, name: str | None = None) -> int:
+        """New ones go last. Adding the same Firefly user again replaces the token (e.g. when it
+        expired), and the name if one is given."""
         with self._db() as db:
             db.execute(
-                "insert into connections (user_id, url, firefly_user, token) values (?, ?, ?, ?)"
-                " on conflict (user_id, url, firefly_user) do update set token = excluded.token",
-                (user_id, url, firefly_user, self._cipher.encrypt(token)),
+                "insert into connections (user_id, url, firefly_user, token, name, position)"
+                " values (?, ?, ?, ?, ?, (select coalesce(max(position) + 1, 0) from connections where user_id = ?))"
+                " on conflict (user_id, url, firefly_user)"
+                " do update set token = excluded.token, name = coalesce(excluded.name, name)",
+                (user_id, url, firefly_user, self._cipher.encrypt(token), name, user_id),
             )
             return db.execute(
                 "select id from connections where user_id = ? and url = ? and firefly_user = ?",
                 (user_id, url, firefly_user),
             ).fetchone()[0]
+
+    def rename_connection(self, user_id: int, connection_id: int, name: str | None) -> None:
+        """None: show the Firefly user's email again."""
+        with self._db() as db:
+            db.execute("update connections set name = ? where user_id = ? and id = ?", (name, user_id, connection_id))
+
+    def order_connections(self, user_id: int, connection_ids: list[int]) -> None:
+        """Puts the connections in this order. Ones not listed (e.g. added meanwhile in another
+        tab) keep their order among themselves, after the listed ones."""
+        with self._db() as db:
+            current = [row[0] for row in db.execute(
+                "select id from connections where user_id = ? order by position, id", (user_id,)
+            )]
+            listed = list(dict.fromkeys(id for id in connection_ids if id in current))
+            order = listed + [id for id in current if id not in listed]
+            db.executemany(
+                "update connections set position = ? where user_id = ? and id = ?",
+                [(position, user_id, id) for position, id in enumerate(order)],
+            )
 
     def set_default(self, user_id: int, connection_id: int, is_default: bool = True) -> None:
         """At most one default per user."""

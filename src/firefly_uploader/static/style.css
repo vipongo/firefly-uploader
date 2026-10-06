@@ -80,6 +80,39 @@
   opacity: 0.6;
 }
 
+/* Connections page: the handle to drag a row elsewhere */
+.connections .handle-cell {
+  width: 1%;
+  padding-right: 0;
+}
+
+.drag-handle {
+  padding: 0.25rem 0.1rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--bs-secondary-color);
+  cursor: grab;
+  touch-action: none; /* on phones, dragging the handle moves the row, not the page */
+}
+
+.drag-handle:hover,
+.drag-handle:focus-visible {
+  color: var(--bs-body-color);
+}
+
+.connections .sortable-ghost {
+  opacity: 0.4;
+}
+
+.rename-toggle {
+  color: var(--bs-secondary-color);
+  vertical-align: baseline;
+}
+
+.rename {
+  max-width: 24rem;
+}
+
 .status-dot {
   font-size: 0.55rem;
   vertical-align: 0.15rem;

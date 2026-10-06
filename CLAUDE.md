@@ -37,9 +37,9 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
 - `src/firefly_uploader/auth.py`: scrypt passwords, session secrets, token encryption (Fernet)
 - `src/firefly_uploader/web.py` + `templates/` + `static/`: FastAPI app, server-rendered forms.
   Every POST form carries `csrf` (the session's token) and is checked with `check_form()`.
-- `src/firefly_uploader/static/vendor/`: AdminLTE 4, Bootstrap 5, Bootstrap Icons (MIT) and Tom Select
-  (Apache-2.0, the searchable category list), fetched by `dev/vendor.py` (pinned versions); never
-  edited by hand. `static/style.css` only adds to them.
+- `src/firefly_uploader/static/vendor/`: AdminLTE 4, Bootstrap 5, Bootstrap Icons (MIT), Tom Select
+  (Apache-2.0, the searchable category list) and SortableJS (MIT, dragging connections into order),
+  fetched by `dev/vendor.py` (pinned versions); never edited by hand. `static/style.css` only adds to them.
 - `tests/fixtures/`: made-up statements in the exact format of real exports
 
 ## Rules
