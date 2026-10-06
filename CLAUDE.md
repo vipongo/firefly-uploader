@@ -20,7 +20,8 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
 - Check `FIREFLY_*` / `FIREFLY_TEST_*` from `.env` (read-only): `... -m firefly_uploader check [--test]`
 - Docker image: `docker build -t firefly-uploader .` (data in the `/data` volume, runs as uid 568).
   Every push to main runs the tests on GitHub Actions and publishes `ghcr.io/vipongo/firefly-uploader:latest`
-  (and `:sha-<commit>`); the user deploys it with Komodo on TrueNAS, using `deploy/compose.yml`.
+  (and `:sha-<commit>`); the user deploys it with Komodo on TrueNAS, using `deploy/compose.yml`
+  (no published port: the reverse proxy joins the `firefly-uploader_default` network).
 
 ## Layout
 
@@ -47,7 +48,7 @@ Runs on the user's Windows PC during development; will later be hosted on TrueNA
 
 ## Rules
 
-- The repo is private for now and will be made public: nothing personal in code, tests, docs or
+- The repo is public (GitHub vipongo/firefly-uploader): nothing personal in code, tests, docs or
   commits (Firefly URL, names, real amounts, balances, merchants, addresses, IBANs, references).
 - Real bank statements live in `samples/` (gitignored). Never commit them. Fixtures copy only the
   format of a real export; all values in them are invented.

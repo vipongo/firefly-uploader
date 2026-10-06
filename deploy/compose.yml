@@ -1,17 +1,24 @@
-# For Komodo (Stack with the compose file written in the UI) or `docker compose up -d`.
+# For Komodo (a Stack with this compose file written in the UI) or `docker compose up -d`.
 # Updating = pulling the newer image and recreating the container; the database upgrades itself.
 services:
   firefly-uploader:
     image: ghcr.io/vipongo/firefly-uploader:latest
+    container_name: firefly-uploader
     restart: unless-stopped
-    ports:
-      - "8765:8765"
     volumes:
       - uploader-data:/data  # the database and secret.key: back up both together
     environment:
-      # Behind a reverse proxy that serves it over https: the proxy's IP address (or "*" if the
-      # port above isn't reachable from elsewhere), so the app knows pages are asked over https.
-      FORWARDED_ALLOW_IPS: "127.0.0.1"
+      # No published port: only containers on this network (the reverse proxy) can reach it,
+      # so the proxy's forwarded headers (https, the visitor's address) can be trusted.
+      FORWARDED_ALLOW_IPS: "*"
+    # Without a reverse proxy, publish the port instead and leave out FORWARDED_ALLOW_IPS:
+    # ports:
+    #   - "8765:8765"
+
+networks:
+  default:
+    # The reverse proxy joins this network and forwards to http://firefly-uploader:8765
+    name: firefly-uploader_default
 
 volumes:
   uploader-data:
